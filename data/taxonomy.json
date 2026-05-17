@@ -1,0 +1,579 @@
+{
+  "version": "1.0",
+  "city": "karachi",
+  "currency": "PKR",
+  "default_ranking_weights": {
+    "distance": 0.30,
+    "rating": 0.30,
+    "availability": 0.25,
+    "price": 0.10,
+    "completed_jobs": 0.05
+  },
+  "_comment": "Per-category ranking_weights override defaults. The Ranking Agent reads these as HINTS — it still has final say based on user-expressed preferences. NO code references these directly.",
+
+  "categories": [
+    {
+      "id": "plumber",
+      "tier": 1,
+      "names": {
+        "en": ["plumber", "pipe fitter", "plumbing"],
+        "ur": ["پلمبر", "نلساز", "پلمبنگ والا"],
+        "roman_ur": ["plumber", "nalsaaz", "paani wala", "pipe wala", "leakage wala", "plumbing wala"]
+      },
+      "places_type": "plumber",
+      "places_keywords": ["plumber", "plumbing", "pipe repair"],
+      "ranking_weights": { "distance": 0.50, "rating": 0.25, "availability": 0.20, "price": 0.05 },
+      "urgency_default": "high",
+      "typical_price_range_pkr": [1500, 5000],
+      "specializations": ["leakage", "blockage", "geyser", "installation", "tap_repair", "drainage"],
+      "ux_label": { "en": "Plumber", "ur": "پلمبر" },
+      "emoji": "🔧"
+    },
+    {
+      "id": "electrician",
+      "tier": 1,
+      "names": {
+        "en": ["electrician", "sparky", "electrical"],
+        "ur": ["الیکٹریشن", "بجلی والا", "الیکٹریکل"],
+        "roman_ur": ["electrician", "bijli wala", "electric wala", "light wala", "wiring wala"]
+      },
+      "places_type": "electrician",
+      "places_keywords": ["electrician", "electrical repair", "wiring"],
+      "ranking_weights": { "distance": 0.50, "rating": 0.25, "availability": 0.20, "price": 0.05 },
+      "urgency_default": "high",
+      "typical_price_range_pkr": [1500, 6000],
+      "specializations": ["wiring", "fan_installation", "switch_repair", "circuit_breaker", "ups_inverter"],
+      "ux_label": { "en": "Electrician", "ur": "الیکٹریشن" },
+      "emoji": "⚡"
+    },
+    {
+      "id": "ac_technician",
+      "tier": 1,
+      "names": {
+        "en": ["ac technician", "ac repair", "ac mechanic", "air conditioner", "ac service"],
+        "ur": ["اے سی ٹیکنیشن", "اے سی والا", "اے سی ٹھیک کرنے والا", "اے سی سروس"],
+        "roman_ur": ["AC wala", "AC technician", "AC mechanic", "AC tek", "AC service", "cooling wala"]
+      },
+      "places_type": "electrician",
+      "places_keywords": ["air conditioner repair", "AC service", "HVAC"],
+      "ranking_weights": { "distance": 0.40, "rating": 0.30, "availability": 0.25, "price": 0.05 },
+      "urgency_default": "high",
+      "typical_price_range_pkr": [1500, 8000],
+      "specializations": ["gas_filling", "general_service", "installation", "compressor_repair", "leak_fix"],
+      "ux_label": { "en": "AC Technician", "ur": "اے سی ٹیکنیشن" },
+      "emoji": "❄️"
+    },
+    {
+      "id": "carpenter",
+      "tier": 1,
+      "names": {
+        "en": ["carpenter", "woodworker", "joinery"],
+        "ur": ["کارپینٹر", "بڑھئی", "لکڑی والا"],
+        "roman_ur": ["carpenter", "barhai", "lakdi wala", "wood wala", "furniture wala"]
+      },
+      "places_type": "general_contractor",
+      "places_keywords": ["carpenter", "woodwork", "furniture repair"],
+      "ranking_weights": { "distance": 0.35, "rating": 0.35, "availability": 0.20, "price": 0.10 },
+      "urgency_default": "normal",
+      "typical_price_range_pkr": [2000, 15000],
+      "specializations": ["furniture_repair", "door_window", "cabinet", "custom_build", "polishing"],
+      "ux_label": { "en": "Carpenter", "ur": "بڑھئی" },
+      "emoji": "🪚"
+    },
+    {
+      "id": "tutor",
+      "tier": 1,
+      "names": {
+        "en": ["tutor", "teacher", "instructor", "academic tutor", "home tutor"],
+        "ur": ["ٹیوٹر", "استاد", "ٹیچر", "ہوم ٹیوٹر"],
+        "roman_ur": ["tutor", "teacher", "ustad", "ustaad", "master", "sir", "home tutor", "academic teacher"]
+      },
+      "places_type": null,
+      "places_keywords": ["home tutor", "private tutor", "tuition"],
+      "ranking_weights": { "rating": 0.45, "completed_jobs": 0.20, "distance": 0.20, "availability": 0.15 },
+      "urgency_default": "low",
+      "typical_price_range_pkr": [800, 5000],
+      "specializations": ["matric", "olevel", "fsc", "alevel", "math", "english", "physics", "chemistry", "biology", "computer_science", "urdu", "islamiat", "pakistan_studies"],
+      "ux_label": { "en": "Tutor", "ur": "ٹیوٹر" },
+      "emoji": "📚"
+    },
+    {
+      "id": "beautician",
+      "tier": 1,
+      "names": {
+        "en": ["beautician", "makeup artist", "hairdresser", "parlor", "salon"],
+        "ur": ["بیوٹیشن", "پارلر", "پارلر والی", "میک اپ آرٹسٹ"],
+        "roman_ur": ["beautician", "parlour wali", "parlor wali", "makeup wali", "hair wali", "salon wali"]
+      },
+      "places_type": "beauty_salon",
+      "places_keywords": ["beauty salon", "beautician", "home makeup"],
+      "ranking_weights": { "rating": 0.45, "completed_jobs": 0.20, "distance": 0.20, "availability": 0.15 },
+      "urgency_default": "normal",
+      "typical_price_range_pkr": [2000, 25000],
+      "specializations": ["bridal", "party_makeup", "haircut", "facial", "threading_waxing", "manicure_pedicure"],
+      "ux_label": { "en": "Beautician", "ur": "بیوٹیشن" },
+      "emoji": "💄"
+    },
+
+    {
+      "id": "painter",
+      "tier": 2,
+      "names": {
+        "en": ["painter", "house painter", "wall paint"],
+        "ur": ["پینٹر", "رنگ ساز", "رنگ والا"],
+        "roman_ur": ["painter", "rang wala", "wall paint wala"]
+      },
+      "places_type": "painter",
+      "places_keywords": ["house painter", "wall painting"],
+      "ranking_weights": { "rating": 0.35, "distance": 0.25, "price": 0.25, "availability": 0.15 },
+      "urgency_default": "low",
+      "typical_price_range_pkr": [8000, 80000],
+      "specializations": ["interior", "exterior", "texture", "wallpaper"],
+      "ux_label": { "en": "Painter", "ur": "پینٹر" },
+      "emoji": "🎨"
+    },
+    {
+      "id": "cleaner",
+      "tier": 2,
+      "names": {
+        "en": ["cleaner", "maid", "housekeeper", "cleaning service", "house cleaning"],
+        "ur": ["صفائی والا", "صفائی والی", "ماسی", "نوکر"],
+        "roman_ur": ["safai wala", "safai wali", "maid", "masi", "cleaning wala", "ghar safai"]
+      },
+      "places_type": null,
+      "places_keywords": ["house cleaning service", "maid service"],
+      "ranking_weights": { "rating": 0.35, "price": 0.25, "distance": 0.25, "availability": 0.15 },
+      "urgency_default": "normal",
+      "typical_price_range_pkr": [1500, 8000],
+      "specializations": ["one_time_deep", "regular_weekly", "post_construction", "office_cleaning"],
+      "ux_label": { "en": "Cleaner", "ur": "صفائی والا" },
+      "emoji": "🧹"
+    },
+    {
+      "id": "cook",
+      "tier": 2,
+      "names": {
+        "en": ["cook", "chef", "home cook", "personal chef"],
+        "ur": ["باورچی", "کھانا پکانے والا", "کک"],
+        "roman_ur": ["cook", "bawarchi", "khana wala", "chef"]
+      },
+      "places_type": null,
+      "places_keywords": ["personal chef", "home cook"],
+      "ranking_weights": { "rating": 0.40, "completed_jobs": 0.20, "distance": 0.20, "price": 0.20 },
+      "urgency_default": "normal",
+      "typical_price_range_pkr": [1500, 15000],
+      "specializations": ["daily_cooking", "dawat_party", "biryani_specialist", "bbq", "continental"],
+      "ux_label": { "en": "Cook", "ur": "باورچی" },
+      "emoji": "🍳"
+    },
+    {
+      "id": "driver",
+      "tier": 2,
+      "names": {
+        "en": ["driver", "chauffeur", "personal driver"],
+        "ur": ["ڈرائیور", "ڈرائیور صاحب"],
+        "roman_ur": ["driver", "driver sahab"]
+      },
+      "places_type": null,
+      "places_keywords": ["driver service"],
+      "ranking_weights": { "rating": 0.40, "distance": 0.35, "availability": 0.15, "completed_jobs": 0.10 },
+      "urgency_default": "normal",
+      "typical_price_range_pkr": [1000, 4000],
+      "specializations": ["hourly", "daily", "monthly", "outstation", "wedding"],
+      "ux_label": { "en": "Driver", "ur": "ڈرائیور" },
+      "emoji": "🚗"
+    },
+    {
+      "id": "auto_mechanic",
+      "tier": 2,
+      "names": {
+        "en": ["mechanic", "car mechanic", "auto repair", "garage"],
+        "ur": ["مکینک", "گاڑی والا", "گاڑی مکینک", "آٹو مکینک"],
+        "roman_ur": ["mechanic", "gaari wala", "car mechanic", "mistri", "garage wala"]
+      },
+      "places_type": "car_repair",
+      "places_keywords": ["auto repair", "car mechanic", "garage"],
+      "ranking_weights": { "rating": 0.40, "distance": 0.30, "completed_jobs": 0.20, "price": 0.10 },
+      "urgency_default": "high",
+      "typical_price_range_pkr": [2000, 30000],
+      "specializations": ["engine", "brakes", "tuning", "denting_painting", "battery_electrical"],
+      "ux_label": { "en": "Auto Mechanic", "ur": "گاڑی مکینک" },
+      "emoji": "🔩"
+    },
+    {
+      "id": "mobile_repair",
+      "tier": 2,
+      "names": {
+        "en": ["mobile repair", "phone repair", "smartphone repair"],
+        "ur": ["موبائل ریپیئر", "موبائل ٹھیک کرنے والا", "فون ریپیئر"],
+        "roman_ur": ["mobile repair", "mobile wala", "phone wala", "phone repair"]
+      },
+      "places_type": "electronics_store",
+      "places_keywords": ["mobile phone repair", "smartphone repair"],
+      "ranking_weights": { "rating": 0.40, "distance": 0.30, "price": 0.20, "availability": 0.10 },
+      "urgency_default": "high",
+      "typical_price_range_pkr": [800, 15000],
+      "specializations": ["screen", "battery", "charging_port", "software", "water_damage"],
+      "ux_label": { "en": "Mobile Repair", "ur": "موبائل ریپیئر" },
+      "emoji": "📱"
+    },
+    {
+      "id": "laptop_repair",
+      "tier": 2,
+      "names": {
+        "en": ["laptop repair", "computer repair", "pc repair"],
+        "ur": ["لیپ ٹاپ ریپیئر", "کمپیوٹر والا", "پی سی ریپیئر"],
+        "roman_ur": ["laptop repair", "computer wala", "lappy wala", "PC wala"]
+      },
+      "places_type": "electronics_store",
+      "places_keywords": ["laptop repair", "computer repair"],
+      "ranking_weights": { "rating": 0.40, "distance": 0.30, "price": 0.20, "availability": 0.10 },
+      "urgency_default": "high",
+      "typical_price_range_pkr": [1500, 25000],
+      "specializations": ["screen", "keyboard", "battery", "motherboard", "software", "data_recovery"],
+      "ux_label": { "en": "Laptop Repair", "ur": "لیپ ٹاپ ریپیئر" },
+      "emoji": "💻"
+    },
+    {
+      "id": "tailor",
+      "tier": 2,
+      "names": {
+        "en": ["tailor", "seamstress", "stitching", "darzi"],
+        "ur": ["درزی", "ٹیلر", "سلائی والی", "سلائی والا"],
+        "roman_ur": ["darzi", "tailor", "silai wala", "silai wali", "stitching wala"]
+      },
+      "places_type": "clothing_store",
+      "places_keywords": ["tailor", "stitching shop"],
+      "ranking_weights": { "rating": 0.40, "distance": 0.25, "price": 0.20, "completed_jobs": 0.15 },
+      "urgency_default": "normal",
+      "typical_price_range_pkr": [500, 5000],
+      "specializations": ["mens_suit", "ladies_suit", "alterations", "bridal", "uniform"],
+      "ux_label": { "en": "Tailor", "ur": "درزی" },
+      "emoji": "✂️"
+    },
+    {
+      "id": "gardener",
+      "tier": 2,
+      "names": {
+        "en": ["gardener", "malee", "landscaping"],
+        "ur": ["مالی", "باغبان"],
+        "roman_ur": ["mali", "gardener", "baghbaan"]
+      },
+      "places_type": null,
+      "places_keywords": ["gardener", "landscaping service"],
+      "ranking_weights": { "rating": 0.35, "price": 0.30, "distance": 0.25, "availability": 0.10 },
+      "urgency_default": "low",
+      "typical_price_range_pkr": [1000, 10000],
+      "specializations": ["lawn_care", "tree_trimming", "landscaping", "monthly_maintenance"],
+      "ux_label": { "en": "Gardener", "ur": "مالی" },
+      "emoji": "🌱"
+    },
+    {
+      "id": "pest_control",
+      "tier": 2,
+      "names": {
+        "en": ["pest control", "exterminator", "fumigation"],
+        "ur": ["پیسٹ کنٹرول", "کیڑے مار", "فومیگیشن"],
+        "roman_ur": ["pest control", "keera mar", "cockroach wala", "fumigation"]
+      },
+      "places_type": null,
+      "places_keywords": ["pest control", "fumigation service"],
+      "ranking_weights": { "rating": 0.45, "completed_jobs": 0.20, "distance": 0.20, "availability": 0.15 },
+      "urgency_default": "high",
+      "typical_price_range_pkr": [3000, 20000],
+      "specializations": ["cockroach", "termite", "rodent", "bed_bug", "mosquito"],
+      "ux_label": { "en": "Pest Control", "ur": "پیسٹ کنٹرول" },
+      "emoji": "🪳"
+    },
+    {
+      "id": "packer_mover",
+      "tier": 2,
+      "names": {
+        "en": ["packers and movers", "moving service", "shifting", "house shifting"],
+        "ur": ["پیکر اینڈ موور", "شفٹنگ", "گھر شفٹنگ"],
+        "roman_ur": ["shifting wala", "mover", "packer", "ghar shifting", "movers and packers"]
+      },
+      "places_type": "moving_company",
+      "places_keywords": ["packers and movers", "moving service"],
+      "ranking_weights": { "rating": 0.40, "completed_jobs": 0.25, "price": 0.20, "availability": 0.15 },
+      "urgency_default": "normal",
+      "typical_price_range_pkr": [10000, 80000],
+      "specializations": ["local_move", "intercity", "office_move", "fragile_handling"],
+      "ux_label": { "en": "Packer & Mover", "ur": "شفٹنگ سروس" },
+      "emoji": "📦"
+    },
+    {
+      "id": "photographer",
+      "tier": 2,
+      "names": {
+        "en": ["photographer", "wedding photographer", "videographer", "photography"],
+        "ur": ["فوٹوگرافر", "تصویر بنانے والا", "ویڈیو گرافر"],
+        "roman_ur": ["photographer", "photo wala", "video wala", "shaadi photographer"]
+      },
+      "places_type": null,
+      "places_keywords": ["photographer", "wedding photographer"],
+      "ranking_weights": { "rating": 0.45, "completed_jobs": 0.20, "availability": 0.20, "distance": 0.15 },
+      "urgency_default": "low",
+      "typical_price_range_pkr": [5000, 200000],
+      "specializations": ["wedding", "event", "portrait", "product", "drone"],
+      "ux_label": { "en": "Photographer", "ur": "فوٹوگرافر" },
+      "emoji": "📸"
+    },
+    {
+      "id": "event_planner",
+      "tier": 2,
+      "names": {
+        "en": ["event planner", "wedding planner", "event manager"],
+        "ur": ["ایونٹ پلانر", "شادی پلانر"],
+        "roman_ur": ["event planner", "shaadi planner", "function wala", "wedding planner"]
+      },
+      "places_type": "event_venue",
+      "places_keywords": ["event planner", "wedding planner"],
+      "ranking_weights": { "rating": 0.45, "completed_jobs": 0.25, "availability": 0.15, "distance": 0.15 },
+      "urgency_default": "low",
+      "typical_price_range_pkr": [25000, 500000],
+      "specializations": ["wedding", "mehndi", "birthday", "corporate", "dholki"],
+      "ux_label": { "en": "Event Planner", "ur": "ایونٹ پلانر" },
+      "emoji": "🎉"
+    },
+    {
+      "id": "personal_trainer",
+      "tier": 2,
+      "names": {
+        "en": ["personal trainer", "gym trainer", "fitness coach", "fitness trainer"],
+        "ur": ["ٹرینر", "فٹنس ٹرینر", "جم ٹرینر"],
+        "roman_ur": ["trainer", "gym trainer", "fitness wala", "personal trainer"]
+      },
+      "places_type": "gym",
+      "places_keywords": ["personal trainer", "fitness coach"],
+      "ranking_weights": { "rating": 0.45, "completed_jobs": 0.20, "distance": 0.20, "availability": 0.15 },
+      "urgency_default": "low",
+      "typical_price_range_pkr": [3000, 25000],
+      "specializations": ["weight_loss", "muscle_building", "cardio", "home_workout"],
+      "ux_label": { "en": "Personal Trainer", "ur": "ٹرینر" },
+      "emoji": "💪"
+    },
+    {
+      "id": "massage_therapist",
+      "tier": 2,
+      "names": {
+        "en": ["massage therapist", "masseur", "massage", "spa at home"],
+        "ur": ["مالش", "مالش والا", "مساج"],
+        "roman_ur": ["massage", "malish wala", "spa wala"]
+      },
+      "places_type": "spa",
+      "places_keywords": ["massage therapist", "home massage"],
+      "ranking_weights": { "rating": 0.50, "completed_jobs": 0.20, "distance": 0.20, "availability": 0.10 },
+      "urgency_default": "low",
+      "typical_price_range_pkr": [2000, 10000],
+      "specializations": ["deep_tissue", "swedish", "thai", "reflexology"],
+      "ux_label": { "en": "Massage Therapist", "ur": "مالش" },
+      "emoji": "💆"
+    },
+    {
+      "id": "pet_groomer",
+      "tier": 2,
+      "names": {
+        "en": ["pet groomer", "dog groomer", "vet", "pet care", "veterinarian"],
+        "ur": ["ویٹرنری", "پیٹ گرومر", "جانوروں کا ڈاکٹر"],
+        "roman_ur": ["pet groomer", "vet", "veterinary doctor", "pet doctor"]
+      },
+      "places_type": "veterinary_care",
+      "places_keywords": ["pet groomer", "veterinarian"],
+      "ranking_weights": { "rating": 0.45, "completed_jobs": 0.20, "distance": 0.25, "availability": 0.10 },
+      "urgency_default": "normal",
+      "typical_price_range_pkr": [1500, 8000],
+      "specializations": ["dog_grooming", "cat_grooming", "vet_consultation", "vaccination"],
+      "ux_label": { "en": "Pet Care", "ur": "پیٹ کیئر" },
+      "emoji": "🐾"
+    },
+    {
+      "id": "babysitter",
+      "tier": 2,
+      "names": {
+        "en": ["babysitter", "nanny", "child care", "ayaa"],
+        "ur": ["آیا", "نینی", "بے بی سٹر"],
+        "roman_ur": ["aaya", "ayah", "nanny", "babysitter", "bachon ki dekhbhal"]
+      },
+      "places_type": null,
+      "places_keywords": ["babysitter", "nanny"],
+      "ranking_weights": { "rating": 0.50, "completed_jobs": 0.25, "distance": 0.15, "availability": 0.10 },
+      "urgency_default": "normal",
+      "typical_price_range_pkr": [1500, 25000],
+      "specializations": ["infant_care", "toddler", "after_school", "live_in"],
+      "ux_label": { "en": "Babysitter", "ur": "آیا" },
+      "emoji": "👶"
+    },
+    {
+      "id": "eldercare",
+      "tier": 2,
+      "names": {
+        "en": ["eldercare", "elder care", "caretaker", "geriatric care", "attendant"],
+        "ur": ["بزرگ کیئر", "کیئر ٹیکر", "اٹینڈنٹ"],
+        "roman_ur": ["eldercare", "buzurgon ki dekhbhal", "care taker", "attendant"]
+      },
+      "places_type": null,
+      "places_keywords": ["eldercare", "home care for elderly"],
+      "ranking_weights": { "rating": 0.50, "completed_jobs": 0.25, "distance": 0.15, "availability": 0.10 },
+      "urgency_default": "normal",
+      "typical_price_range_pkr": [2000, 30000],
+      "specializations": ["live_in", "day_care", "physiotherapy", "dementia_care", "post_surgery"],
+      "ux_label": { "en": "Elder Care", "ur": "بزرگ کیئر" },
+      "emoji": "🧓"
+    },
+    {
+      "id": "laundry",
+      "tier": 2,
+      "names": {
+        "en": ["laundry", "dry cleaning", "washing", "dhobi"],
+        "ur": ["لانڈری", "دھوبی", "ڈرائی کلیننگ"],
+        "roman_ur": ["laundry", "dhobi", "dry cleaning wala", "washing wala"]
+      },
+      "places_type": "laundry",
+      "places_keywords": ["laundry", "dry cleaning"],
+      "ranking_weights": { "rating": 0.30, "distance": 0.30, "price": 0.25, "availability": 0.15 },
+      "urgency_default": "normal",
+      "typical_price_range_pkr": [500, 5000],
+      "specializations": ["regular_wash", "dry_clean", "starch", "pickup_delivery"],
+      "ux_label": { "en": "Laundry", "ur": "لانڈری" },
+      "emoji": "👔"
+    },
+    {
+      "id": "locksmith",
+      "tier": 2,
+      "names": {
+        "en": ["locksmith", "lock repair", "key maker"],
+        "ur": ["تالے والا", "تالہ ساز", "چابی والا"],
+        "roman_ur": ["tala wala", "locksmith", "chabi wala", "lock wala"]
+      },
+      "places_type": "locksmith",
+      "places_keywords": ["locksmith", "emergency locksmith"],
+      "ranking_weights": { "distance": 0.45, "availability": 0.30, "rating": 0.20, "price": 0.05 },
+      "urgency_default": "emergency",
+      "typical_price_range_pkr": [500, 5000],
+      "specializations": ["door_lock", "car_key", "safe", "digital_lock"],
+      "ux_label": { "en": "Locksmith", "ur": "تالے والا" },
+      "emoji": "🔑"
+    },
+    {
+      "id": "welder",
+      "tier": 2,
+      "names": {
+        "en": ["welder", "welding", "ironwork"],
+        "ur": ["ویلڈر", "ویلڈنگ", "لوہار"],
+        "roman_ur": ["welder", "welding wala", "lohar"]
+      },
+      "places_type": null,
+      "places_keywords": ["welder", "welding service"],
+      "ranking_weights": { "rating": 0.35, "distance": 0.30, "price": 0.20, "availability": 0.15 },
+      "urgency_default": "normal",
+      "typical_price_range_pkr": [1500, 15000],
+      "specializations": ["gate_grill", "structural", "repair", "custom_metalwork"],
+      "ux_label": { "en": "Welder", "ur": "ویلڈر" },
+      "emoji": "🔥"
+    },
+    {
+      "id": "mason",
+      "tier": 2,
+      "names": {
+        "en": ["mason", "bricklayer", "raj mistri", "construction worker"],
+        "ur": ["راج مستری", "مستری", "مزدور"],
+        "roman_ur": ["raj mistri", "mason", "mazdoor", "mistri"]
+      },
+      "places_type": null,
+      "places_keywords": ["mason", "construction worker"],
+      "ranking_weights": { "rating": 0.35, "completed_jobs": 0.25, "price": 0.20, "distance": 0.20 },
+      "urgency_default": "low",
+      "typical_price_range_pkr": [1500, 50000],
+      "specializations": ["brickwork", "plaster", "tile_fitting", "construction", "repair"],
+      "ux_label": { "en": "Mason", "ur": "راج مستری" },
+      "emoji": "🧱"
+    },
+    {
+      "id": "cctv_installer",
+      "tier": 2,
+      "names": {
+        "en": ["cctv installer", "security camera", "surveillance", "cctv"],
+        "ur": ["سی سی ٹی وی", "کیمرہ والا", "سیکیورٹی کیمرہ"],
+        "roman_ur": ["cctv wala", "camera wala", "security camera wala"]
+      },
+      "places_type": "electronics_store",
+      "places_keywords": ["CCTV installation", "security camera"],
+      "ranking_weights": { "rating": 0.40, "completed_jobs": 0.25, "distance": 0.20, "price": 0.15 },
+      "urgency_default": "normal",
+      "typical_price_range_pkr": [10000, 100000],
+      "specializations": ["home", "office", "wireless", "wired", "dvr_setup"],
+      "ux_label": { "en": "CCTV Installer", "ur": "سی سی ٹی وی" },
+      "emoji": "📹"
+    },
+    {
+      "id": "internet_tech",
+      "tier": 2,
+      "names": {
+        "en": ["internet", "wifi", "internet technician", "isp tech", "router setup"],
+        "ur": ["انٹرنیٹ", "وائی فائی", "انٹرنیٹ ٹیکنیشن"],
+        "roman_ur": ["internet wala", "wifi wala", "net wala", "router wala"]
+      },
+      "places_type": null,
+      "places_keywords": ["internet technician", "wifi setup"],
+      "ranking_weights": { "distance": 0.40, "availability": 0.30, "rating": 0.25, "price": 0.05 },
+      "urgency_default": "high",
+      "typical_price_range_pkr": [800, 5000],
+      "specializations": ["router_setup", "fiber_install", "speed_troubleshoot", "mesh_wifi"],
+      "ux_label": { "en": "Internet Tech", "ur": "انٹرنیٹ ٹیک" },
+      "emoji": "📡"
+    },
+    {
+      "id": "quran_teacher",
+      "tier": 2,
+      "names": {
+        "en": ["quran teacher", "quran tutor", "hafiz", "religious teacher", "qari"],
+        "ur": ["قرآن استاد", "حافظ صاحب", "قاری صاحب", "قرآن ٹیچر"],
+        "roman_ur": ["Quran teacher", "Hafiz sahab", "Qari sahab", "deen ki taleem"]
+      },
+      "places_type": null,
+      "places_keywords": ["Quran teacher", "Hafiz", "Islamic teacher"],
+      "ranking_weights": { "rating": 0.50, "completed_jobs": 0.20, "distance": 0.20, "availability": 0.10 },
+      "urgency_default": "low",
+      "typical_price_range_pkr": [1500, 8000],
+      "specializations": ["nazra", "hifz", "tajweed", "translation", "kids", "adults"],
+      "ux_label": { "en": "Quran Teacher", "ur": "قرآن استاد" },
+      "emoji": "📖"
+    },
+    {
+      "id": "mehndi_artist",
+      "tier": 2,
+      "names": {
+        "en": ["mehndi artist", "henna artist", "bridal mehndi"],
+        "ur": ["مہندی والی", "مہندی آرٹسٹ"],
+        "roman_ur": ["mehndi wali", "henna wala", "mehndi artist", "bridal mehndi"]
+      },
+      "places_type": null,
+      "places_keywords": ["mehndi artist", "henna artist"],
+      "ranking_weights": { "rating": 0.50, "completed_jobs": 0.25, "availability": 0.15, "distance": 0.10 },
+      "urgency_default": "low",
+      "typical_price_range_pkr": [1500, 30000],
+      "specializations": ["bridal", "guests", "kids", "arabic_style", "indian_style"],
+      "ux_label": { "en": "Mehndi Artist", "ur": "مہندی آرٹسٹ" },
+      "emoji": "🌺"
+    }
+  ],
+
+  "neighborhoods_karachi": [
+    { "name": "Gulshan-e-Iqbal",     "ur": "گلشن اقبال",      "lat": 24.9292, "lng": 67.0937 },
+    { "name": "DHA Phase 5",         "ur": "ڈی ایچ اے فیز ۵",  "lat": 24.8003, "lng": 67.0395 },
+    { "name": "DHA Phase 6",         "ur": "ڈی ایچ اے فیز ۶",  "lat": 24.7900, "lng": 67.0700 },
+    { "name": "Clifton",             "ur": "کلفٹن",            "lat": 24.8130, "lng": 67.0300 },
+    { "name": "North Nazimabad",     "ur": "نارتھ ناظم آباد",  "lat": 24.9425, "lng": 67.0394 },
+    { "name": "Bahadurabad",         "ur": "بہادر آباد",       "lat": 24.8842, "lng": 67.0735 },
+    { "name": "Saddar",              "ur": "صدر",              "lat": 24.8615, "lng": 67.0254 },
+    { "name": "Korangi",             "ur": "کورنگی",           "lat": 24.8333, "lng": 67.1333 },
+    { "name": "Malir",               "ur": "ملیر",             "lat": 24.8930, "lng": 67.2100 },
+    { "name": "Federal B Area",      "ur": "فیڈرل بی ایریا",   "lat": 24.9136, "lng": 67.0808 },
+    { "name": "PECHS",               "ur": "پی ای سی ایچ ایس", "lat": 24.8717, "lng": 67.0656 },
+    { "name": "Nazimabad",           "ur": "ناظم آباد",        "lat": 24.9080, "lng": 67.0297 },
+    { "name": "Johar",               "ur": "جوہر",             "lat": 24.9183, "lng": 67.1183 },
+    { "name": "Defence View",        "ur": "ڈیفنس ویو",        "lat": 24.8378, "lng": 67.0556 },
+    { "name": "Tariq Road",          "ur": "طارق روڈ",         "lat": 24.8825, "lng": 67.0658 }
+  ]
+}

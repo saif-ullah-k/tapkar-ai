@@ -1,0 +1,48 @@
+# Don't ship local dev artifacts to Cloud Build.
+
+# Local env / secrets
+.env
+.env.*
+*.local
+
+# Node
+**/node_modules
+**/*.log
+npm-debug.log*
+
+# Flutter / Android build outputs (huge, not needed for backend deploy)
+mobile/
+**/build/
+**/.dart_tool/
+**/.flutter-plugins*
+**/.idea/
+**/.gradle/
+*.apk
+*.aab
+flutter_sdk.zip
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Editor
+.vscode/
+.idea/
+
+# Recordings & screenshots (huge media)
+recordings/
+*.mp4
+*.mov
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# Tests
+**/test/
+**/*.test.ts
+**/*.spec.ts
+
+# Other backends not relevant to Cloud Run
+mobile.backup/

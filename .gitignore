@@ -1,0 +1,85 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# build outputs
+dist/
+build/
+.next/
+out/
+
+# environments
+.env
+.env.local
+.env.*.local
+*.env
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Flutter — match both legacy mobile/* paths and the actual project at mobile/tapkar_ai/
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.packages
+mobile/build/
+mobile/ios/Pods/
+mobile/android/.gradle/
+mobile/android/app/build/
+mobile/android/local.properties
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/Pods/
+**/.gradle/
+**/local.properties
+
+# Flutter / Android build outputs (regenerated; never commit)
+mobile/tapkar_ai/build/
+mobile/tapkar_ai/.idea/
+mobile/tapkar_ai.backup/
+*.iml
+
+# Backup copy from earlier rescaffold
+mobile/tapkar_ai.backup/
+
+# screen recordings (large binaries, kept locally only)
+recordings/raw/*
+!recordings/raw/.gitkeep
+
+# secrets / credentials
+*.pem
+*.key
+service-account*.json
+firebase-adminsdk*.json
+
+# misc
+.cache/
+coverage/
+
+# Project-specific
+flutter_sdk.zip
+mobile.backup/
+mobile/tapkar_ai.backup/
+recordings/final/*
+!recordings/final/.gitkeep
+recordings/screenshots/*.png
+!recordings/screenshots/.gitkeep
+
+# Don't commit huge APK in the main repo; we'll attach to a GitHub release instead
+mobile/tapkar_ai/build/app/outputs/flutter-apk/*.apk
+*.aab

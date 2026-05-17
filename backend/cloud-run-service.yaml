@@ -1,0 +1,73 @@
+# Declarative Cloud Run service spec — kept in repo as documentation.
+# `deploy.sh` uses imperative gcloud commands; this YAML is the same shape
+# expressed declaratively, in case you want to `gcloud run services replace`
+# from source-of-truth instead.
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: tapkar-ai-backend
+  namespace: fcmapp-30770
+  labels:
+    app: tapkar-ai
+    component: backend
+spec:
+  template:
+    metadata:
+      annotations:
+        # Allow up to 10 concurrent requests per instance — agent calls are slow-ish (~30s)
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "10"
+        run.googleapis.com/cpu-throttling: "true"
+        run.googleapis.com/startup-cpu-boost: "true"
+    spec:
+      containerConcurrency: 10
+      timeoutSeconds: 600
+      containers:
+        - image: us-central1-docker.pkg.dev/fcmapp-30770/cloud-run/tapkar-ai-backend:latest
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              memory: 1Gi
+              cpu: "1"
+          env:
+            - name: USE_VERTEX_AI
+              value: "true"
+            - name: GCP_PROJECT
+              value: fcmapp-30770
+            - name: GCP_LOCATION
+              value: us-central1
+            - name: GEMINI_MODEL
+              value: gemini-2.5-flash
+            - name: GEMINI_FLASH_MODEL
+              value: gemini-2.5-flash
+            - name: USE_REAL_PLACES
+              value: "false"
+            - name: USE_FIRESTORE
+              value: "false"
+            - name: DEBUG_TRACES
+              value: "true"
+            - name: RUN_TIMEOUT_MS
+              value: "480000"
+            - name: AGENT_TIMEOUT_MS
+              value: "120000"
+            - name: MAX_STEPS
+              value: "12"
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            timeoutSeconds: 5
+            periodSeconds: 30
+  traffic:
+    - percent: 100
+      latestRevision: true
