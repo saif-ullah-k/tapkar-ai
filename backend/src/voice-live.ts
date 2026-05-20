@@ -24,6 +24,7 @@ import {
   addProvider,
   getProviderIdForUser,
   getProviderFromFirestore,
+  loadTaxonomy,
 } from './data.js';
 
 // Gemini Live model. Confirmed-available on AI Studio v1beta via
@@ -277,12 +278,51 @@ const PROVIDER_TOOLS = {
 
 // Execute a provider-mode tool call directly against the data store.
 // Returns a small result payload the Live model can narrate.
+/** Normalize a category string into a canonical taxonomy id. Customer-side
+ *  discovery filters on exact match against ids like "plumber",
+ *  "ac_technician", "tutor", so a voice signup that came back as
+ *  "Plumber" / "AC Tech" / "Plumber, Computer Technician" would never
+ *  match a search. Lowercase, replace spaces with underscores, and
+ *  collapse common aliases. */
+function normalizeCategory(raw: string | undefined): string {
+  if (!raw) return 'general';
+  // Drop anything after the first comma — multi-categories aren't
+  // supported by the discovery filter yet, take the primary.
+  let v = String(raw).split(',')[0].trim().toLowerCase();
+  // Spaces & dashes → underscores. "AC Tech" → "ac_tech".
+  v = v.replace(/[-\s]+/g, '_').replace(/[^a-z0-9_]/g, '');
+  // Hand-mapped aliases for the most common things providers say.
+  const aliases: Record<string, string> = {
+    ac: 'ac_technician',
+    ac_tech: 'ac_technician',
+    ac_repair: 'ac_technician',
+    ac_wala: 'ac_technician',
+    aircon: 'ac_technician',
+    plumbing: 'plumber',
+    pipe_fitter: 'plumber',
+    nalsaaz: 'plumber',
+    electric: 'electrician',
+    electrical: 'electrician',
+    carpenter_wood: 'carpenter',
+    tuition: 'tutor',
+    teacher: 'tutor',
+    quran: 'quran_teacher',
+    beauty: 'beautician',
+    mehndi: 'mehndi_artist',
+    mehendi: 'mehndi_artist',
+  };
+  return aliases[v] ?? v;
+}
+
 async function executeProviderTool(
   toolName: string,
   args: any,
   userId: string,
   ctx: { userPhone?: string } = {},
 ): Promise<any> {
+  if (args && typeof args === 'object' && 'category' in args && args.category) {
+    args.category = normalizeCategory(args.category as string);
+  }
   let providerId = await getProviderIdForUser(userId);
   const all = loadProviders();
   let existing: any = providerId ? all.find((p) => p.id === providerId) : undefined;
@@ -326,6 +366,24 @@ async function executeProviderTool(
       };
     }
     providerId = `p_user_${userId.slice(-8)}`;
+
+    // Resolve neighborhood → real lat/lng so distance filtering works.
+    // Without this every voice signup defaults to Karachi-center
+    // coords (24.87, 67.03) and ends up >5km from common search
+    // points like Gulshan-e-Iqbal, missing radius-based filters.
+    let provLat = 24.87;
+    let provLng = 67.03;
+    if (args.neighborhood) {
+      try {
+        const tax = loadTaxonomy() as any;
+        const match = (tax.neighborhoods_karachi as any[] | undefined)?.find(
+          (n) => typeof n?.name === 'string' &&
+            n.name.toLowerCase() === String(args.neighborhood).toLowerCase()
+        );
+        if (match) { provLat = match.lat; provLng = match.lng; }
+      } catch {}
+    }
+
     existing = {
       id: providerId,
       name: args.name ?? 'Unnamed provider',
@@ -348,9 +406,10 @@ async function executeProviderTool(
       jobs_completed: 0,
       years_experience: 0,
       verified: false,
+      available_now: true,
       tags: ['newly_registered_via_voice'],
-      lat: 24.87,
-      lng: 67.03,
+      lat: provLat,
+      lng: provLng,
     };
     await addProvider(existing, userId);
     console.log(`[provider-voice] created NEW profile ${providerId} for user ${userId}`);

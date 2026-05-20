@@ -81,14 +81,22 @@ function dayKey(iso: string): keyof Provider['availability'] {
 function timeWithinRange(iso: string, range: string): boolean {
   const [start, end] = range.split('-');
   const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
+  let [eh, em] = end.split(':').map(Number);
   // Pull the HH:MM directly from the ISO string — they're already in the
   // request timezone (e.g. +05:00 for Karachi), which is what the
   // provider's `availability` map is keyed by.
   const tm = iso.match(/T(\d{2}):(\d{2})/);
   if (!tm) return false;
   const mins = parseInt(tm[1], 10) * 60 + parseInt(tm[2], 10);
-  return mins >= sh * 60 + sm && mins <= eh * 60 + em;
+  const startMins = sh * 60 + sm;
+  let endMins = eh * 60 + em;
+  // "00:00" as an END time means "midnight at the end of the day", not
+  // "midnight at the start". Voice signups often produce ranges like
+  // "10:00-00:00" intending "10 AM to midnight" — without this fix
+  // endMins=0 < startMins=600 and nothing matches. Roll end forward
+  // when end <= start so the range covers the rest of the day.
+  if (endMins <= startMins) endMins = 24 * 60;
+  return mins >= startMins && mins <= endMins;
 }
 
 export function isAvailable(provider: Provider, atIso: string): boolean {
