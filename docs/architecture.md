@@ -89,6 +89,13 @@
 - Tools: `schedule-reminder`, `check-status`, `send-survey`.
 - Writes scheduled jobs that fire later (Firestore TTL or in-app scheduler — not Cloud Scheduler in the 4-day window).
 
+### 2.7 Voice mode (Gemini Live)
+- Optional second entry point — full-duplex voice in addition to the chat surface.
+- Mobile opens a WebSocket to `/voice/live` on the same Cloud Run instance.
+- The bridge ([`backend/src/voice-live.ts`](../backend/src/voice-live.ts)) opens a per-client Gemini Live session and forwards 16 kHz PCM in / 24 kHz PCM out.
+- The Live model is configured with **a single tool**, `book_a_service`. When the user states what/where/when, the model calls that tool with the full request as a string; the bridge runs the 5-agent orchestrator described above and returns the booking outcome. The model then narrates the result in the user's language.
+- Architectural consequence: voice mode does **not** replace the agent pipeline. It adds a real-time interaction layer on top of it. The trace panel keeps updating because `agent_step` events stream through the same WebSocket alongside audio chunks.
+
 ## 3. Anti-monolithic guarantee
 
 The hackathon brief explicitly forbids "monolithic" architectures with hardcoded business logic. This system satisfies the rule by **never letting code decide anything that an agent could decide**:
