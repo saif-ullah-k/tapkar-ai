@@ -237,10 +237,10 @@ async function impl_search_providers(args: {
       if (p.category === args.category_id) return true;
       return (p.additional_categories ?? []).includes(args.category_id);
     })
-    .filter((p) => {
-      if (!args.specializations || args.specializations.length === 0) return true;
-      return args.specializations.some((s) => p.specializations.includes(s));
-    })
+    // Specializations DELIBERATELY DON'T FILTER — when a user asks for
+    // a plumber we show every plumber in range. Specs are a ranking
+    // hint at most. Hiding a plumber because their profile didn't list
+    // "leakage" in sub-skills was the wrong default.
     .map<ProviderCandidate>((p) => ({
       ...p,
       distance_km: Number(haversineKm(args.near, { lat: p.lat, lng: p.lng }).toFixed(2)),

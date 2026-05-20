@@ -367,27 +367,39 @@ async function executeProviderTool(
     }
     providerId = `p_user_${userId.slice(-8)}`;
 
-    // Resolve neighborhood → real lat/lng so distance filtering works.
-    // Without this every voice signup defaults to Karachi-center
-    // coords (24.87, 67.03) and ends up >5km from common search
-    // points like Gulshan-e-Iqbal, missing radius-based filters.
+    // Resolve neighborhood → real lat/lng so distance filtering works,
+    // and pull default specializations from the taxonomy entry for the
+    // chosen category. Without specs the discovery filter (which
+    // requires a spec match when intent specifies "leakage", "geyser",
+    // etc.) would silently drop a brand-new provider even though they
+    // do offer those services.
     let provLat = 24.87;
     let provLng = 67.03;
-    if (args.neighborhood) {
-      try {
-        const tax = loadTaxonomy() as any;
+    let defaultSpecs: string[] = [];
+    try {
+      const tax = loadTaxonomy() as any;
+      if (args.neighborhood) {
         const match = (tax.neighborhoods_karachi as any[] | undefined)?.find(
           (n) => typeof n?.name === 'string' &&
             n.name.toLowerCase() === String(args.neighborhood).toLowerCase()
         );
         if (match) { provLat = match.lat; provLng = match.lng; }
-      } catch {}
-    }
+      }
+      if (args.category) {
+        const cat = (tax.categories as any[] | undefined)?.find(
+          (c) => c?.id === args.category
+        );
+        if (cat && Array.isArray(cat.specializations)) {
+          defaultSpecs = cat.specializations as string[];
+        }
+      }
+    } catch {}
 
     existing = {
       id: providerId,
       name: args.name ?? 'Unnamed provider',
       category: args.category ?? 'general',
+      specializations: defaultSpecs,
       neighborhood: args.neighborhood ?? 'Karachi',
       gender: args.gender ?? 'male',
       languages: args.languages ?? ['ur', 'roman_ur'],

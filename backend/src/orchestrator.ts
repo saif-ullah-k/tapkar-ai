@@ -376,6 +376,12 @@ export async function* runPipeline(input: RunInput): AsyncGenerator<StreamEvent>
               ? { lat: loc.lat, lng: loc.lng }
               : { lat: 24.87, lng: 67.03 }; // Karachi center fallback
             const discoveryT0 = Date.now();
+            // Intentionally do NOT pass specializations to the discovery
+            // filter — asking for "plumber, paani leak" should return
+            // every plumber in range, not just those whose profile happens
+            // to enumerate "leakage" as a sub-skill. The user wanted a
+            // plumber; we give them plumbers. Ranking can prefer ones
+            // whose specs match, but never exclude.
             const candidates = (await executeTool(
               'search_providers',
               {
@@ -383,7 +389,6 @@ export async function* runPipeline(input: RunInput): AsyncGenerator<StreamEvent>
                 free_text: intentOut.service?.free_text,
                 near,
                 radius_km: 15,
-                specializations: intentOut.service?.specializations ?? [],
               },
               { runId: run_id }
             )) as any[];
