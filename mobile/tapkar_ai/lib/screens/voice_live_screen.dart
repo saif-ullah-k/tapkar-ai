@@ -68,6 +68,9 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
   String _transcript = '';
   String _lastToolMessage = '';
   bool _muted = false;
+  // Set true when the provider signup flow has collected enough fields.
+  // Drives the "Go to profile" banner button.
+  bool _signupComplete = false;
   // True while we're playing the bot's audio back to the user. Mic chunks
   // captured during this window MUST NOT be forwarded — otherwise the
   // mic picks up the speaker's own output and we either loop or confuse
@@ -245,6 +248,24 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
         break;
       case 'tool_result':
         setState(() => _lastToolMessage = '');
+        // Provider signup flow: when the backend confirms all required
+        // fields are saved, flip the local auth into provider mode and
+        // surface a "Profile dekho" banner so the user can leave the
+        // voice screen and land on their dashboard. Without this the
+        // bot finished talking but the app stayed in signup mode.
+        final step = frame['step'] as Map<String, dynamic>?;
+        if (step != null && step['signup_complete'] == true) {
+          final profile = step['profile'] as Map<String, dynamic>?;
+          final auth = widget.auth;
+          if (auth != null && profile != null && !_signupComplete) {
+            auth.switchToProvider(
+              providerId: profile['id'] as String? ?? '',
+              providerName: profile['name'] as String? ?? '',
+              providerCategory: profile['category'] as String?,
+            );
+            setState(() => _signupComplete = true);
+          }
+        }
         break;
       case 'turn_complete':
         _flushAudio();
@@ -351,6 +372,20 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
       _state = _BotState.error;
       _lastToolMessage = msg;
     });
+  }
+
+  /// Provider signup complete — tear down the voice session and pop
+  /// every route until we're back at the provider shell. The local
+  /// AuthState was already flipped to provider mode in the tool_result
+  /// handler so the shell will route the user to their profile.
+  Future<void> _goToProfile() async {
+    await _stopMic();
+    try { _send({'type': 'close'}); } catch (_) {}
+    await _wsSub?.cancel();
+    try { await _ws?.sink.close(); } catch (_) {}
+    await _player.stop();
+    if (!mounted) return;
+    Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
   Future<void> _exit() async {
@@ -472,6 +507,28 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                           color: Colors.orangeAccent, fontSize: 12)),
+                ],
+                if (_signupComplete) ...[
+                  const SizedBox(height: 18),
+                  // Banner CTA — appears the moment the backend confirms
+                  // all required fields landed. Tap pops out of voice +
+                  // setup screens back to the provider shell, where the
+                  // local AuthState (now in provider mode) means the
+                  // Profile tab shows their fresh dashboard.
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _goToProfile,
+                      icon: const Icon(Icons.account_circle_rounded, size: 22),
+                      label: const Text('Profile dekho', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        backgroundColor: Colors.greenAccent.shade700,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                    ),
+                  ),
                 ],
               ]),
             ),

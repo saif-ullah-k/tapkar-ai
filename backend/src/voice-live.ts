@@ -366,11 +366,33 @@ async function executeProviderTool(
     }
     const updated = { ...existing, ...updates };
     await addProvider(updated, userId);
+
+    // Mark signup complete once all required fields are present. Mobile
+    // uses this to switch out of signup mode (AuthState.switchToProvider)
+    // and offer a "Go to profile" button. Required = name + category +
+    // neighborhood + phone (matches the chat-flow's REQUIRED list, minus
+    // gender/price/languages/availability which all have safe defaults).
+    const hasWeeklyHours = updated.availability && Object.values(updated.availability as Record<string, string[]>).some((arr) => Array.isArray(arr) && arr.length > 0);
+    const signupComplete = Boolean(
+      updated.name && updated.category && updated.neighborhood && updated.phone && hasWeeklyHours,
+    );
+
     return {
       status: 'updated',
       provider_id: providerId,
       changed_fields: Object.keys(updates),
-      summary: `Updated ${Object.keys(updates).join(', ') || 'profile (created)'}.`,
+      signup_complete: signupComplete,
+      profile: {
+        id: providerId,
+        name: updated.name,
+        category: updated.category,
+        neighborhood: updated.neighborhood,
+        phone: updated.phone,
+        price_range_pkr: updated.price_range_pkr,
+      },
+      summary: signupComplete
+        ? `Profile complete: ${updated.name} (${updated.category}, ${updated.neighborhood}). Customers can now find this provider.`
+        : `Updated ${Object.keys(updates).join(', ') || 'profile (created)'}.`,
     };
   }
 
