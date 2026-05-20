@@ -19,12 +19,25 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../state/app_state.dart';
+import '../state/auth_state.dart';
 
 enum _BotState { connecting, listening, thinking, speaking, error }
 
 class VoiceLiveScreen extends StatefulWidget {
-  final AppState state;
-  const VoiceLiveScreen({super.key, required this.state});
+  /// Customer-mode constructor — passes the AppState so agent traces
+  /// can stream into the chat-screen trace panel.
+  final AppState? state;
+  /// Provider-mode constructor — providers don't have a customer-side
+  /// AppState; we pull user info straight off AuthState and ignore the
+  /// trace-panel hookup.
+  final AuthState? auth;
+  const VoiceLiveScreen({super.key, required AppState this.state}) : auth = null;
+  const VoiceLiveScreen.forProvider({super.key, required AuthState this.auth}) : state = null;
+
+  String get _userId => state?.userId ?? auth?.userId ?? 'anon';
+  String get _userName => state?.auth.displayName ?? auth?.displayName ?? '';
+  String get _language => state?.auth.language ?? auth?.language ?? 'roman_ur';
+  String get _userGender => state?.auth.gender ?? auth?.gender ?? 'male';
 
   @override
   State<VoiceLiveScreen> createState() => _VoiceLiveScreenState();
@@ -108,13 +121,15 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
           onError: (e) => _setError('socket: $e'), onDone: () {
         if (mounted && _state != _BotState.error) _setError('socket closed');
       });
-      // Send auth frame immediately.
+      // Send auth frame immediately. Pulls from AppState in customer
+      // mode, or AuthState directly in provider mode (no AppState
+      // available on the provider side).
       _send({
         'type': 'auth',
-        'user_id': widget.state.userId,
-        'user_name': widget.state.auth.displayName,
-        'language': widget.state.auth.language,
-        'user_gender': widget.state.auth.gender,
+        'user_id': widget._userId,
+        'user_name': widget._userName,
+        'language': widget._language,
+        'user_gender': widget._userGender,
       });
     } catch (e) {
       _setError('connect: $e');
@@ -216,10 +231,12 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
         break;
       case 'agent_step':
         // Agent traces stream through the existing app state so the trace
-        // panel (when reopened in chat) shows them.
+        // panel (when reopened in chat) shows them. Provider-mode has no
+        // AppState, so the trace just drops on the floor — the
+        // provider-side trace panel is a future feature.
         final step = frame['step'] as Map<String, dynamic>?;
         if (step != null) {
-          widget.state.handleVoiceLiveStep(step);
+          widget.state?.handleVoiceLiveStep(step);
         }
         break;
       case 'tool_result':

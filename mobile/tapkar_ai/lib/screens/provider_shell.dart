@@ -6,6 +6,7 @@ import '../theme.dart';
 import '../utils/time.dart';
 import 'provider_chat_setup_screen.dart';
 import 'provider_onboarding_screen.dart';
+import 'voice_live_screen.dart';
 
 /// Top-level shell shown when the user is signed in as a provider.
 /// 3 tabs: Jobs (incoming bookings), Messages, Profile (switch back from here).
@@ -27,6 +28,7 @@ class _ProviderShellState extends State<ProviderShell> {
     _tabs = [
       _ProviderJobsTab(auth: widget.auth),
       _ProviderMessagesTab(auth: widget.auth),
+      _ProviderAssistTab(auth: widget.auth),
       _ProviderProfileTab(auth: widget.auth),
     ];
   }
@@ -86,12 +88,17 @@ class _BottomNav extends StatelessWidget {
                 onTap: () => onTap(1),
                 accent: AppColors.followup,
               ),
+              _NavCenterItem(
+                label: t.navAskAi,
+                selected: index == 2,
+                onTap: () => onTap(2),
+              ),
               _NavItem(
                 label: t.navProfile,
                 icon: Icons.person_outline_rounded,
                 activeIcon: Icons.person_rounded,
-                selected: index == 2,
-                onTap: () => onTap(2),
+                selected: index == 3,
+                onTap: () => onTap(3),
                 accent: AppColors.followup,
               ),
             ],
@@ -139,6 +146,55 @@ class _NavItem extends StatelessWidget {
                   weight: selected ? FontWeight.w700 : FontWeight.w500,
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Highlighted center tab — gradient orb. Same visual treatment as the
+/// customer-side Ask AI button so providers get the same affordance.
+class _NavCenterItem extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _NavCenterItem({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 38, height: 38,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppColors.violet, AppColors.booking],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  shape: BoxShape.circle,
+                  boxShadow: selected
+                      ? [BoxShadow(color: AppColors.violet.withOpacity(0.5), blurRadius: 16)]
+                      : null,
+                ),
+                child: const Icon(Icons.auto_awesome, color: Colors.white, size: 20),
+              ),
+              const SizedBox(height: 2),
+              Text(label,
+                  style: AppFonts.base(
+                    size: 10,
+                    color: selected ? AppColors.violet : Colors.white70,
+                    weight: FontWeight.w700,
+                  )),
             ],
           ),
         ),
@@ -380,6 +436,159 @@ class _ProviderJobsTabState extends State<_ProviderJobsTab> {
 }
 
 // ───────────────────────── Messages tab ─────────────────────────
+
+/// Provider-side "Ask AI" tab — landing screen for the AI assistant.
+/// Two big affordances: voice talk (Gemini Live) and AI chat (text-based
+/// profile editor). Mirrors the customer side's ChatScreen but for the
+/// provider's own profile-management needs.
+class _ProviderAssistTab extends StatelessWidget {
+  final AuthState auth;
+  const _ProviderAssistTab({required this.auth});
+
+  Future<void> _openChat(BuildContext context) async {
+    final api = ProviderApi();
+    Map<String, dynamic>? existing;
+    try {
+      final r = await api.findProviderByUser(auth.userId);
+      existing = r?['provider'] as Map<String, dynamic>?;
+    } catch (_) {}
+    if (!context.mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ProviderChatSetupScreen(
+        auth: auth,
+        mode: 'edit',
+        existing: existing,
+      ),
+    ));
+  }
+
+  void _openVoice(BuildContext context) {
+    // Reuses the customer voice screen — same Gemini Live bridge.
+    // Plumbing for a provider-specific tool (edit_profile) is on the
+    // backlog; for now this gives the provider the same booking-aware
+    // assistant the customer has.
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => VoiceLiveScreen.forProvider(auth: auth),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(
+        backgroundColor: AppColors.bg,
+        elevation: 0,
+        title: Text('Ask AI', style: AppFonts.base(size: 15, weight: FontWeight.w700)),
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Kis tarah madad chahiye?',
+                  style: AppFonts.base(size: 18, weight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              Text('Voice se baat karein ya likh ke. Profile update karna ho, "kal off" mark karna ho, ya kuch bhi.',
+                  style: AppFonts.base(size: 12, color: Colors.white60)),
+              const SizedBox(height: 28),
+              // Voice option — large gradient card, dominant.
+              _AssistCard(
+                title: 'Voice se baat karein',
+                subtitle: 'Live mein bolo — AI sun raha hai.',
+                icon: Icons.graphic_eq,
+                gradient: const LinearGradient(
+                  colors: [AppColors.violet, AppColors.booking],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                onTap: () => _openVoice(context),
+              ),
+              const SizedBox(height: 14),
+              // Text chat option.
+              _AssistCard(
+                title: 'Likh ke chat karein',
+                subtitle: 'Profile edit, off-day mark, prices update.',
+                icon: Icons.chat_bubble_outline_rounded,
+                gradient: const LinearGradient(
+                  colors: [AppColors.booking, AppColors.ranking],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                onTap: () => _openChat(context),
+              ),
+              const Spacer(),
+              Text(
+                'Examples to say:\n'
+                '• "Kal 10 se 12 nahi mein"\n'
+                '• "Price update karo 2000 se 5000"\n'
+                '• "Saturday off kar do"',
+                style: AppFonts.base(size: 11, color: Colors.white38),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AssistCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Gradient gradient;
+  final VoidCallback onTap;
+  const _AssistCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.gradient,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: gradient,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48, height: 48,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.18),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: Colors.white, size: 24),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: AppFonts.base(size: 16, weight: FontWeight.w700, color: Colors.white)),
+                  const SizedBox(height: 2),
+                  Text(subtitle,
+                      style: AppFonts.base(size: 12, color: Colors.white.withOpacity(0.85))),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.white70, size: 22),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _ProviderMessagesTab extends StatefulWidget {
   final AuthState auth;
