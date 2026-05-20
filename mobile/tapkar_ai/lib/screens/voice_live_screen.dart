@@ -15,6 +15,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../state/app_state.dart';
@@ -30,7 +31,7 @@ class VoiceLiveScreen extends StatefulWidget {
 }
 
 class _VoiceLiveScreenState extends State<VoiceLiveScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   // The backend WebSocket URL is derived from the HTTPS API URL.
   static String get _wsUrl {
     const apiUrl = String.fromEnvironment(
@@ -62,6 +63,12 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Keep the screen awake while voice mode is open. Without this an
+    // auto-lock (or the user tapping power) kills the mic stream and
+    // the WS session — Android pauses recording the moment the screen
+    // turns off, and Live closes the idle session shortly after.
+    WakelockPlus.enable();
     _pulse = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
@@ -339,7 +346,36 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // App went to background (home button, lock screen, app switcher).
+    // Android suspends the mic recorder when the app loses foreground;
+    // any audio bytes we DO ship over the wire post-background will be
+    // dropped or rejected. Close cleanly so the user gets a clear
+    // "tap close, then voice again to resume" instead of a half-dead
+    // session that times out a minute later.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      if (!_paused) {
+        _paused = true;
+        _stopMic();
+        _setError('Voice paused — app in background. Tap close to exit.');
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      // Came back to foreground. The recorder + WS are already torn
+      // down by the pause path above; user has to tap close + voice
+      // again to start fresh. Clear the error so the orb isn't red.
+      if (_paused) {
+        _paused = false;
+      }
+    }
+  }
+
+  bool _paused = false;
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    WakelockPlus.disable();
     _playbackSafetyTimer?.cancel();
     _pulse.dispose();
     _stopMic();
