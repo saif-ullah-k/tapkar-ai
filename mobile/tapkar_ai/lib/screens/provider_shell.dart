@@ -697,13 +697,34 @@ class _ProviderMessagesTab extends StatefulWidget {
 class _ProviderMessagesTabState extends State<_ProviderMessagesTab> {
   final ProviderApi _api = ProviderApi();
   List<Map<String, dynamic>> _msgs = [];
+  /// Chat threads for this provider, one per booking that has messages.
+  /// Refreshed on a 5s timer so new customer messages appear in the
+  /// inbox even when the provider isn't on the Jobs tab.
+  List<_ProviderChatThread> _threads = const [];
+  final Map<String, String> _lastSeenChatIdByBooking = {};
+  Timer? _chatPollTimer;
   bool _loading = true;
   String? _error;
+
+  static const _apiUrl = String.fromEnvironment(
+    'API_URL',
+    defaultValue: 'https://tapkar-ai-backend-d56rhra4sa-uc.a.run.app',
+  );
 
   @override
   void initState() {
     super.initState();
     _load();
+    _pollChats();
+    _chatPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (mounted) _pollChats();
+    });
+  }
+
+  @override
+  void dispose() {
+    _chatPollTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -723,6 +744,56 @@ class _ProviderMessagesTabState extends State<_ProviderMessagesTab> {
         _loading = false;
       });
     }
+  }
+
+  /// Pull every booking assigned to this provider + the latest message
+  /// thread per booking, into a single list the inbox renders.
+  Future<void> _pollChats() async {
+    final pid = widget.auth.providerId;
+    if (pid == null || pid.isEmpty) return;
+    try {
+      final bookings = await _api.listMyBookings(pid);
+      final out = <_ProviderChatThread>[];
+      for (final b in bookings) {
+        final id = b['id'] as String?;
+        if (id == null) continue;
+        try {
+          final r = await http.get(Uri.parse('$_apiUrl/bookings/$id/messages'))
+              .timeout(const Duration(seconds: 4));
+          if (r.statusCode != 200) continue;
+          final data = jsonDecode(r.body) as Map<String, dynamic>;
+          final msgs = (data['messages'] as List?)
+                  ?.whereType<Map<String, dynamic>>()
+                  .toList() ??
+              const <Map<String, dynamic>>[];
+          if (msgs.isEmpty) continue;
+          final latest = msgs.last;
+          out.add(_ProviderChatThread(
+            bookingId: id,
+            category: (b['service_category_id'] as String?) ?? 'job',
+            lastText: (latest['text'] as String?) ?? '',
+            lastFrom: (latest['from'] as String?) ?? '',
+            lastTs: (latest['ts'] as String?) ?? '',
+            unread: (() {
+              final prev = _lastSeenChatIdByBooking[id];
+              final latestId = latest['id'] as String?;
+              // First observation hydrates; thereafter any unseen
+              // user-sent message is "unread" until the provider opens
+              // the chat.
+              if (latestId == null) return false;
+              if (prev == null) {
+                _lastSeenChatIdByBooking[id] = latestId;
+                return false;
+              }
+              if (prev == latestId) return false;
+              return latest['from'] == 'user';
+            })(),
+          ));
+        } catch (_) {/* per-booking transient */}
+      }
+      out.sort((a, b) => b.lastTs.compareTo(a.lastTs));
+      if (mounted) setState(() => _threads = out);
+    } catch (_) {/* whole poll transient */}
   }
 
   @override
@@ -758,7 +829,7 @@ class _ProviderMessagesTabState extends State<_ProviderMessagesTab> {
         ),
       );
     }
-    if (_msgs.isEmpty) {
+    if (_msgs.isEmpty && _threads.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -776,24 +847,191 @@ class _ProviderMessagesTabState extends State<_ProviderMessagesTab> {
       );
     }
     return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        itemCount: _msgs.length,
-        itemBuilder: (_, i) {
-          final m = _msgs[i];
-          return Container(
-            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.border),
+      onRefresh: () async {
+        await _load();
+        await _pollChats();
+      },
+      child: ListView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        children: [
+          if (_threads.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Text(
+                'CHATS · ${_threads.length}'.toUpperCase(),
+                style: AppFonts.mono(size: 10, color: Colors.white54)
+                    .copyWith(letterSpacing: 1.4),
+              ),
             ),
-            child: Text(m['text'] as String? ?? '?',
-                style: AppFonts.base(size: 13)),
-          );
+            ..._threads.map((th) => _ProviderChatThreadRow(
+                  thread: th,
+                  auth: widget.auth,
+                  onRead: () {
+                    setState(() {
+                      // Mark this thread as no-longer-unread locally;
+                      // the next poll will confirm.
+                      final idx = _threads.indexWhere((x) => x.bookingId == th.bookingId);
+                      if (idx >= 0) {
+                        _threads[idx] = _threads[idx].copyWithUnread(false);
+                      }
+                    });
+                  },
+                )),
+            const SizedBox(height: 8),
+          ],
+          if (_msgs.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Text(
+                'NOTIFICATIONS · ${_msgs.length}'.toUpperCase(),
+                style: AppFonts.mono(size: 10, color: Colors.white54)
+                    .copyWith(letterSpacing: 1.4),
+              ),
+            ),
+            ..._msgs.map((m) => Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Text(m['text'] as String? ?? '?',
+                      style: AppFonts.base(size: 13)),
+                )),
+          ],
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+}
+
+// ───────────────────── Chat thread model + row ─────────────────────
+
+class _ProviderChatThread {
+  final String bookingId;
+  final String category;
+  final String lastText;
+  final String lastFrom;
+  final String lastTs;
+  final bool unread;
+  const _ProviderChatThread({
+    required this.bookingId,
+    required this.category,
+    required this.lastText,
+    required this.lastFrom,
+    required this.lastTs,
+    required this.unread,
+  });
+  _ProviderChatThread copyWithUnread(bool u) => _ProviderChatThread(
+        bookingId: bookingId,
+        category: category,
+        lastText: lastText,
+        lastFrom: lastFrom,
+        lastTs: lastTs,
+        unread: u,
+      );
+}
+
+class _ProviderChatThreadRow extends StatelessWidget {
+  final _ProviderChatThread thread;
+  final AuthState auth;
+  final VoidCallback onRead;
+  const _ProviderChatThreadRow({
+    required this.thread,
+    required this.auth,
+    required this.onRead,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fromMe = thread.lastFrom == 'provider';
+    final tsLabel = thread.lastTs.length >= 16
+        ? thread.lastTs.substring(11, 16)
+        : '';
+    final hasUnread = thread.unread;
+    final categoryLabel = thread.category
+        .replaceAll('_', ' ')
+        .split(' ')
+        .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
+        .join(' ');
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () async {
+          await Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => BookingChatScreen(
+              bookingId: thread.bookingId,
+              myRole: 'provider',
+              mySenderId: auth.providerId ?? '',
+              counterpartName: 'Customer',
+            ),
+          ));
+          onRead();
         },
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: hasUnread
+                  ? AppColors.violet.withOpacity(0.55)
+                  : AppColors.border,
+            ),
+          ),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: AppColors.violet.withOpacity(0.2),
+              child: const Icon(Icons.chat_bubble_outline_rounded,
+                  color: AppColors.violet, size: 18),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Expanded(
+                    child: Text(
+                      'Customer · $categoryLabel',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppFonts.base(
+                          size: 14,
+                          weight: hasUnread ? FontWeight.w800 : FontWeight.w600),
+                    ),
+                  ),
+                  if (tsLabel.isNotEmpty)
+                    Text(tsLabel,
+                        style: AppFonts.mono(size: 10, color: Colors.white54)),
+                ]),
+                const SizedBox(height: 3),
+                Text(
+                  fromMe ? 'You: ${thread.lastText}' : thread.lastText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppFonts.base(
+                    size: 12,
+                    color: hasUnread ? Colors.white : Colors.white60,
+                    weight: hasUnread ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ]),
+            ),
+            if (hasUnread) ...[
+              const SizedBox(width: 8),
+              Container(
+                width: 10, height: 10,
+                decoration: const BoxDecoration(
+                  color: AppColors.violet,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
+          ]),
+        ),
       ),
     );
   }
