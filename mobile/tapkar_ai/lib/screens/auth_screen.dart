@@ -136,23 +136,17 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
     );
   }
 
-  Widget _logo() => Row(
-        children: [
-          Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.violet, AppColors.booking],
-              ),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            alignment: Alignment.center,
-            child: const Text('⚡', style: TextStyle(fontSize: 20)),
-          ),
-          const SizedBox(width: 10),
-          Text('TapKar AI',
-              style: AppFonts.base(size: 19, weight: FontWeight.w800)),
-        ],
+  Widget _logo() => Center(
+        // Use the full square brand mark on signup — it's the user's
+        // first impression of the app, so we want the whole identity
+        // (orb + wordmark + tagline) front and centre, not a tiny ⚡
+        // emoji + a text label.
+        child: Image.asset(
+          'assets/brand/logo-square.png',
+          height: 160,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.medium,
+        ),
       );
 
   Widget _tabSwitcher() => Container(
