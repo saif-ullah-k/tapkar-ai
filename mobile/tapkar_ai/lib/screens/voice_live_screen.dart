@@ -348,29 +348,42 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // App went to background (home button, lock screen, app switcher).
-    // Android suspends the mic recorder when the app loses foreground;
-    // any audio bytes we DO ship over the wire post-background will be
-    // dropped or rejected. Close cleanly so the user gets a clear
-    // "tap close, then voice again to resume" instead of a half-dead
-    // session that times out a minute later.
+    // Android suspends the mic recorder when the app loses foreground.
+    // Tear down the dead session so we have a clean slate to rebuild.
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       if (!_paused) {
         _paused = true;
-        _stopMic();
-        _setError('Voice paused — app in background. Tap close to exit.');
+        _tearDownSession();
       }
     } else if (state == AppLifecycleState.resumed) {
-      // Came back to foreground. The recorder + WS are already torn
-      // down by the pause path above; user has to tap close + voice
-      // again to start fresh. Clear the error so the orb isn't red.
-      if (_paused) {
+      // Back to foreground. Auto-reconnect a fresh Live session so
+      // the user doesn't have to tap close + voice again every time
+      // they glance away.
+      if (_paused && mounted) {
         _paused = false;
+        _connect();
       }
     }
   }
 
   bool _paused = false;
+
+  /// Close the WS + stop mic + cancel timers without disposing the
+  /// widget. Used by the lifecycle observer so resume can rebuild
+  /// from scratch.
+  Future<void> _tearDownSession() async {
+    _playbackSafetyTimer?.cancel();
+    _playbackSafetyTimer = null;
+    _botPlaying = false;
+    _pcmOutBuffer.clear();
+    await _stopMic();
+    try { await _player.stop(); } catch (_) {}
+    await _wsSub?.cancel();
+    _wsSub = null;
+    try { await _ws?.sink.close(); } catch (_) {}
+    _ws = null;
+  }
 
   @override
   void dispose() {

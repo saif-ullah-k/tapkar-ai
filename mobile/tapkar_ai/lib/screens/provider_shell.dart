@@ -296,6 +296,30 @@ class _ProviderJobsTabState extends State<_ProviderJobsTab> {
               ),
             ]),
           ),
+          // "Ask AI" — opens conversational profile editor. Provider
+          // says "kal 10-12 nahi mein" / "price update karo" → AI
+          // patches the draft. Mirrors the customer Ask-AI button.
+          IconButton(
+            icon: const Icon(Icons.auto_awesome, color: AppColors.violet, size: 20),
+            tooltip: 'Ask AI to edit profile',
+            onPressed: () async {
+              final api = ProviderApi();
+              Map<String, dynamic>? existing;
+              try {
+                final r = await api.findProviderByUser(widget.auth.userId);
+                existing = r?['provider'] as Map<String, dynamic>?;
+              } catch (_) {}
+              if (!context.mounted) return;
+              await Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => ProviderChatSetupScreen(
+                  auth: widget.auth,
+                  mode: 'edit',
+                  existing: existing,
+                ),
+              ));
+              if (mounted) _load();
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white60, size: 18),
             onPressed: _load,
@@ -786,6 +810,26 @@ class _ProviderProfileTabState extends State<_ProviderProfileTab> {
       }
       if (openDays.isNotEmpty) {
         addRow(Icons.schedule, 'Hours', openDays.join('\n'));
+      }
+    }
+
+    // Date-specific availability exceptions (e.g. "kal 10-12 off").
+    // Hidden if the provider hasn't set any.
+    final overrides = (p['availability_overrides'] as List?) ?? const [];
+    if (overrides.isNotEmpty) {
+      final lines = overrides.map<String>((o) {
+        if (o is! Map) return '';
+        final date = o['date']?.toString() ?? '';
+        final note = o['note']?.toString();
+        final ovHours = (o['hours'] as List?)?.cast<String>() ?? const [];
+        final hoursLabel =
+            ovHours.isEmpty ? 'CLOSED ALL DAY' : ovHours.join(', ');
+        return note != null && note.isNotEmpty
+            ? '$date · $hoursLabel  ($note)'
+            : '$date · $hoursLabel';
+      }).where((s) => s.isNotEmpty).join('\n');
+      if (lines.isNotEmpty) {
+        addRow(Icons.event_busy, 'Date exceptions', lines);
       }
     }
 

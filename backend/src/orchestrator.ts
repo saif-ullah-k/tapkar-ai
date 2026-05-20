@@ -726,7 +726,58 @@ export async function* runPipeline(input: RunInput): AsyncGenerator<StreamEvent>
 
       // Capture booking_id for the final result event
       if (agentName === 'booking') {
-        const b = result.output as any;
+        let b = result.output as any;
+
+        // Anti-no-call guard: the model sometimes emits `tool_code:
+        // "print(default_api.create_booking(...))"` as a STRING in its
+        // output instead of actually calling the tool. booking_id ends
+        // up null. Detect that pattern + the locked-provider path being
+        // available, and self-heal the same way we do for hallucinated
+        // IDs below.
+        if (!b?.booking_id && (state.user_locked_provider_id || (state.ranking as any)?.top_3?.[0]?.provider_id)) {
+          const intent = state.intent as any;
+          const ranking = state.ranking as any;
+          const providerId =
+            (state.user_locked_provider_id as string | null) ??
+            ranking?.top_3?.[0]?.provider_id ??
+            null;
+          const timeIso =
+            (state.user_locked_time_iso as string | null) ??
+            intent?.time?.iso ??
+            intent?.booking?.occurrence?.iso ??
+            null;
+          if (providerId && timeIso) {
+            console.warn(
+              `[pipeline] booking agent returned no booking_id (likely tool_code pseudo-call). Self-healing via direct create_booking for ${providerId} at ${timeIso}.`
+            );
+            try {
+              const { executeTool } = await import('./tools/index.js');
+              const created = (await executeTool(
+                'create_booking',
+                {
+                  user_id: input.user_id,
+                  provider_id: providerId,
+                  service_category_id:
+                    intent?.service?.category_id ?? intent?.service?.free_text ?? 'unknown',
+                  time_iso: timeIso,
+                  location: intent?.location ?? { use_user_default: true },
+                  language: (state.user_language as string | null) ?? intent?.language ?? 'en',
+                  estimated_price_pkr: intent?.service?.estimated_price_pkr ?? [1000, 5000],
+                  notes: '',
+                },
+                { runId: run_id }
+              )) as any;
+              if (created?.booking_id) {
+                if (!b || typeof b !== 'object') b = {} as any;
+                (b as any).booking_id = created.booking_id;
+                (b as any).status = created.status ?? 'requested';
+                console.log(`[pipeline] booking self-heal OK (no-call path) → ${created.booking_id}`);
+              }
+            } catch (selfHealErr: any) {
+              console.error(`[pipeline] no-call self-heal failed: ${selfHealErr?.message ?? selfHealErr}`);
+            }
+          }
+        }
 
         // Anti-hallucination guard: the agent sometimes emits a fake
         // booking_id (e.g. "bk_12345") without actually calling
