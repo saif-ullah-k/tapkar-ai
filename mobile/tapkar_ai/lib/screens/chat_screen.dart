@@ -197,16 +197,8 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
         actions: [
-          // Gemini Live voice mode — full-screen real-time voice session.
-          IconButton(
-            icon: const Icon(Icons.graphic_eq, size: 20, color: AppColors.violet),
-            tooltip: 'Voice mode (Gemini Live)',
-            onPressed: () {
-              Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => VoiceLiveScreen(state: widget.state),
-              ));
-            },
-          ),
+          // (Removed the small graphic_eq voice icon — replaced by a
+          // big gradient button next to the send button in _composer.)
           IconButton(
             icon: const Icon(Icons.edit_square, size: 18, color: Colors.white60),
             tooltip: 'New chat',
@@ -517,6 +509,36 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
           const SizedBox(width: 6),
+          // Gemini Live voice mode — big gradient circle right next to
+          // the send button so users actually see and use it. Replaces
+          // the easily-missed AppBar icon.
+          IconButton(
+            tooltip: 'Voice mode (Gemini Live)',
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => VoiceLiveScreen(state: widget.state),
+              ));
+            },
+            icon: Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(
+                  colors: [AppColors.violet, AppColors.booking],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.violet.withOpacity(0.45),
+                    blurRadius: 10,
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.graphic_eq, color: Colors.white, size: 20),
+            ),
+          ),
+          const SizedBox(width: 4),
           IconButton(
             // Always enabled — sendMessage queues if a run is in flight.
             onPressed: _send,
