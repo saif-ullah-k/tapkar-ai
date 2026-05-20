@@ -63,17 +63,22 @@ const SYSTEM_PROMPT = `You are TapKar AI's voice assistant for Pakistan's inform
 
 YOUR JOB:
 - Listen to what the user wants.
-- When they describe a service they need, EXTRACT the request and call the \`book_a_service\` tool with their full request as text. The tool runs a deterministic 5-agent pipeline (intent, discovery, ranking, booking, follow-up) which finds matching providers and books one.
+- When they describe a service they need, EXTRACT the request and call the \`book_a_service\` tool with their full request as text. The tool runs a deterministic 5-agent pipeline (intent, discovery, ranking, booking, follow-up) which finds matching providers and AUTO-BOOKS the top-ranked one.
 - While the tool is running, briefly say something like "thoda intezar karein, providers dhoond rahi/raha hoon" (gender-matched).
-- When the tool returns, naturally narrate what happened — booking confirmed / awaiting provider / options to choose / etc.
-- If the user asks something off-topic, gently steer them back.
+- When the tool returns, NARRATE THE BOOKING — name, rating, neighborhood, time, price range — in 2–3 short sentences. Do NOT ask the user to "select an option" — voice has no picker UI, the system has already chosen the top-ranked provider for them. Read off the details so they know who's coming and when.
+
+NARRATION TEMPLATE (adapt to user language):
+- Success: "Ho gaya — [provider name] book kar diya hai, [rating] stars wala, [neighborhood] se. Time [time]. Price [price range] PKR. Kuch aur chahiye?"
+- Auto-picked: result will include \`auto_picked\` with name + time — narrate THAT one as the confirmed booking.
+- Failed: explain briefly what went wrong and what's needed.
 
 CRITICAL RULES:
 - Always speak in the SAME language the user is using. Urdu → Urdu, Roman Urdu → Roman Urdu, English → English.
 - Be warm and natural, not robotic. You're a human assistant, not a form.
 - If the user gives incomplete info ("kal plumber chahiye" without location), ask conversationally for what's missing BEFORE calling the tool. Don't call the tool with incomplete data.
 - After booking succeeds, ask if they need anything else.
-- "kal" in service-booking ALWAYS means tomorrow (future), never yesterday.`;
+- "kal" in service-booking ALWAYS means tomorrow (future), never yesterday.
+- NEVER say "select 1, 2, or 3" or "choose an option" — the user can't see a list. Always pick + narrate.`;
 
 const BOOKING_TOOL = {
   functionDeclarations: [
@@ -128,18 +133,67 @@ async function executeBookingPipeline(
   ctx: { user_id: string; language: string; user_gender: string },
   emitStep: (step: unknown) => void
 ): Promise<Record<string, unknown>> {
-  const gen = runPipeline({
-    user_id: ctx.user_id,
-    user_input: userRequest,
-    language: ctx.language,
-    user_gender: ctx.user_gender,
-  });
+  // First pass: run the full pipeline.
+  const first = await drainPipeline(
+    {
+      user_id: ctx.user_id,
+      user_input: userRequest,
+      language: ctx.language,
+      user_gender: ctx.user_gender,
+    },
+    emitStep
+  );
+
+  // Voice has no good way to render a picker UI. If the pipeline ended
+  // with multiple options, auto-pick the TOP one (it's the ranking
+  // agent's #1 recommendation) and re-run with that selection locked,
+  // so the model gets a confirmed booking back to narrate — not a
+  // "please select" prompt.
+  if (first.status === 'needs_user_input' && first.options.length > 0) {
+    const pick = first.options[0];
+    const second = await drainPipeline(
+      {
+        user_id: ctx.user_id,
+        user_input: userRequest,
+        language: ctx.language,
+        user_gender: ctx.user_gender,
+        selected_provider_id: pick.provider_id,
+        selected_time_iso: pick.iso,
+        prior_intent: first.intent,
+      },
+      emitStep
+    );
+    second.auto_picked = pick;
+    second.summary = second.last_user_message ||
+      `Booked with ${pick.provider_name} for ${pick.label ?? pick.iso}, status=${second.status}`;
+    return second;
+  }
+
+  return first;
+}
+
+/** Run runPipeline to completion, forwarding step events to the caller and
+ *  collecting a flat result blob the Live model can consume. */
+async function drainPipeline(
+  input: {
+    user_id: string;
+    user_input: string;
+    language: string;
+    user_gender: string;
+    selected_provider_id?: string;
+    selected_time_iso?: string;
+    prior_intent?: any;
+  },
+  emitStep: (step: unknown) => void
+): Promise<any> {
+  const gen = runPipeline(input);
   const collected: any = {
     booking_id: null,
     status: 'unknown',
     summary: '',
     last_user_message: '',
     options: [],
+    intent: null,
   };
   while (true) {
     const r = await gen.next();
@@ -158,6 +212,8 @@ async function executeBookingPipeline(
           label: a.label,
         }));
       }
+    } else if (evt.event === 'step' && evt.data?.agent === 'intent') {
+      collected.intent = evt.data.output;
     } else if (evt.event === 'step' && evt.data?.agent === 'booking') {
       const out = evt.data.output;
       if (out?.booking_id) collected.booking_id = out.booking_id;

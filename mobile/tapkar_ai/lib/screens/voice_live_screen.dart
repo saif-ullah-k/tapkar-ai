@@ -74,13 +74,20 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
     // turns get no input. voiceCommunication + AudioFocus.none lets the
     // mic keep recording during playback. Speakerphone-on routes output
     // through the loud speaker (matches the recorder's profile).
+    // Player goes through the LOUDSPEAKER (USAGE_MEDIA), not the earpiece.
+    // The recorder still uses voiceCommunication for echo cancellation,
+    // but the player can't share that usage type or audio would route
+    // through the small call speaker. focus=none keeps the player from
+    // yanking focus away from the recorder. modeNormal is the right
+    // partner for USAGE_MEDIA — voiceCommunication/inCommunication
+    // would force routing through the earpiece.
     _player.setAudioContext(AudioContext(
       android: const AudioContextAndroid(
-        isSpeakerphoneOn: true,
+        isSpeakerphoneOn: false,
         contentType: AndroidContentType.speech,
-        usageType: AndroidUsageType.voiceCommunication,
+        usageType: AndroidUsageType.media,
         audioFocus: AndroidAudioFocus.none,
-        audioMode: AndroidAudioMode.inCommunication,
+        audioMode: AndroidAudioMode.normal,
       ),
     ));
     _connect();
@@ -131,9 +138,14 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
       // to record AND play simultaneously, with built-in echo
       // cancellation so the bot's speaker output doesn't loop back.
       androidConfig: AndroidRecordConfig(
+        // voiceCommunication audio source gives hardware echo cancellation
+        // (so the bot's loudspeaker output doesn't loop back into the mic).
+        // BUT keep the audio manager in NORMAL mode — modeInCommunication
+        // would force every stream through the earpiece, making the bot's
+        // voice sound like it's coming from the call speaker.
         audioSource: AndroidAudioSource.voiceCommunication,
-        audioManagerMode: AudioManagerMode.modeInCommunication,
-        speakerphone: true,
+        audioManagerMode: AudioManagerMode.modeNormal,
+        speakerphone: false,
         manageBluetooth: false,
       ),
     ));
