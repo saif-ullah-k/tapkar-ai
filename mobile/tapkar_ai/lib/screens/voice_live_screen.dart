@@ -38,6 +38,9 @@ class VoiceLiveScreen extends StatefulWidget {
   String get _userName => state?.auth.displayName ?? auth?.displayName ?? '';
   String get _language => state?.auth.language ?? auth?.language ?? 'roman_ur';
   String get _userGender => state?.auth.gender ?? auth?.gender ?? 'male';
+  /// 'user' for customer flow (booking services); 'provider' for service-
+  /// provider flow (editing own profile, availability, prices).
+  String get _mode => state != null ? 'user' : 'provider';
 
   @override
   State<VoiceLiveScreen> createState() => _VoiceLiveScreenState();
@@ -130,6 +133,7 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
         'user_name': widget._userName,
         'language': widget._language,
         'user_gender': widget._userGender,
+        'mode': widget._mode,
       });
     } catch (e) {
       _setError('connect: $e');

@@ -19,6 +19,7 @@ import { GoogleGenAI, Modality, Type, type Session } from '@google/genai';
 import { config } from './config.js';
 import { runPipeline } from './orchestrator.js';
 import { getBookingFromStore } from './store.js';
+import { loadProviders, addProvider, getProviderIdForUser } from './data.js';
 
 // Gemini Live model. Confirmed-available on AI Studio v1beta via
 // /v1beta/models listing. "native-audio-latest" auto-tracks the newest
@@ -39,6 +40,9 @@ interface ClientFrame {
   user_name?: string;
   language?: string;
   user_gender?: string;
+  /** 'user' = customer booking flow; 'provider' = service-provider profile
+   *  management. Each mode uses a different system prompt + tool set. */
+  mode?: 'user' | 'provider';
   /** Base64-encoded 16-bit PCM 16 kHz mono audio chunk. */
   audio?: string;
   /** Optional plain-text message (debug / testing). */
@@ -126,6 +130,175 @@ const BOOKING_TOOL = {
     },
   ],
 };
+
+// ───────────────────────────────────────────────────────────────────────────
+//  PROVIDER MODE — system prompt + tools for service-provider profile mgmt
+// ───────────────────────────────────────────────────────────────────────────
+
+const PROVIDER_SYSTEM_PROMPT = `Tum TapKar AI ho — service providers (plumber, AC wala, tutor, beautician, etc.) ko apna profile manage karne mein help karte ho. Tum customer ki tarah unke liye bookings nahi karte — yeh provider hain, unke profile/availability/prices update karne hain.
+
+PERSONALITY (Karachi friend, not bot):
+- "haan ji", "achha", "OK ji", "ek second", "ho gaya", "theek hai".
+- Short, 1-2 sentences. No scripted feel.
+- User ki language match karo: Urdu / Roman Urdu / English.
+- Filler natural — "abhi update karta/karti hoon", "thoda check karein".
+
+WHAT YOU CAN DO:
+1. **Update profile fields** — name, category, neighborhood, phone, price range, languages, weekly availability hours. Use \`update_provider_profile\` tool.
+2. **Set date-specific off-days or hour exceptions** — e.g. "kal 10-12 nahi", "Friday off", "Saturday se peeche short hours". Use \`set_availability_override\` tool. Empty hours = closed all day.
+3. **Remove an override** — provider says "kal wala remove kar do" → use \`remove_availability_override\`.
+
+CRITICAL RULES:
+- PEHLE 1-2 word bolo, phir tool call karo. "Achha, abhi update karta hoon..." se start karo — NEVER silent tool call.
+- Tool ke baad TURANT confirm karo what changed. "Ho gaya — kal (2026-05-21) ko 10-12 off mark kar diya. Aur kuch?"
+- "kal" = tomorrow, "parsoo" = day after, "aaj" = today. Resolve to specific date BEFORE calling tool.
+- Agar provider kuch ambiguous bole ("Friday off") — ask: "is hafte ka Friday ya har Friday?" Then call right tool.
+- NEVER ask multiple questions at once. ONE thing at a time.
+- For weekly schedule (har Monday se Friday 9-5) use update_provider_profile.availability. For single-date exceptions (kal off) use set_availability_override.`;
+
+const PROVIDER_TOOLS = {
+  functionDeclarations: [
+    {
+      name: 'update_provider_profile',
+      description:
+        'Update one or more fields on the current provider profile. Use for PERMANENT changes — phone, price, weekly hours, etc. Only include fields the provider wants changed. The availability field is the WEEKLY schedule (monday..sunday). For single-date exceptions, use set_availability_override instead.',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          name: { type: Type.STRING, description: 'Provider/business name.' },
+          category: { type: Type.STRING, description: 'Service category like plumber, ac_technician, tutor.' },
+          neighborhood: { type: Type.STRING, description: 'Primary working area (e.g. Gulshan-e-Iqbal).' },
+          phone: { type: Type.STRING, description: '10-digit local phone like 3001234567.' },
+          price_min_pkr: { type: Type.NUMBER, description: 'Lower bound of typical price in PKR.' },
+          price_max_pkr: { type: Type.NUMBER, description: 'Upper bound of typical price in PKR.' },
+          availability: {
+            type: Type.OBJECT,
+            description: 'Weekly schedule. Each day is an array of "HH:MM-HH:MM" ranges, or empty for closed.',
+            properties: {
+              monday: { type: Type.ARRAY, items: { type: Type.STRING } },
+              tuesday: { type: Type.ARRAY, items: { type: Type.STRING } },
+              wednesday: { type: Type.ARRAY, items: { type: Type.STRING } },
+              thursday: { type: Type.ARRAY, items: { type: Type.STRING } },
+              friday: { type: Type.ARRAY, items: { type: Type.STRING } },
+              saturday: { type: Type.ARRAY, items: { type: Type.STRING } },
+              sunday: { type: Type.ARRAY, items: { type: Type.STRING } },
+            },
+          },
+        },
+      },
+    },
+    {
+      name: 'set_availability_override',
+      description:
+        'Set or replace the availability for a specific calendar date — used for one-off exceptions like "kal 10-12 nahi" or "Friday 25 off". Empty hours array = closed all day on that date. Hours that ARE provided replace any existing override for that date.',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          date: {
+            type: Type.STRING,
+            description: 'ISO date YYYY-MM-DD. Resolve "kal" / "tomorrow" against the current Pakistan date before calling.',
+          },
+          hours: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: 'Array of "HH:MM-HH:MM" ranges this date is OPEN. Empty = closed all day. For "10-12 off" with normal hours 9-6, this would be ["09:00-10:00", "12:00-18:00"].',
+          },
+          note: {
+            type: Type.STRING,
+            description: 'Optional human-readable reason like "Family wedding" / "10-12 not available".',
+          },
+        },
+        required: ['date', 'hours'],
+      },
+    },
+    {
+      name: 'remove_availability_override',
+      description: 'Delete an existing date-specific override so the normal weekly schedule applies again on that date.',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          date: { type: Type.STRING, description: 'ISO date YYYY-MM-DD to remove the override for.' },
+        },
+        required: ['date'],
+      },
+    },
+  ],
+};
+
+// Execute a provider-mode tool call directly against the data store.
+// Returns a small result payload the Live model can narrate.
+async function executeProviderTool(
+  toolName: string,
+  args: any,
+  userId: string,
+): Promise<any> {
+  const providerId = await getProviderIdForUser(userId);
+  if (!providerId) {
+    return { error: 'no_provider_profile', summary: 'No provider profile linked to this user.' };
+  }
+  const all = loadProviders();
+  const existing: any = all.find((p) => p.id === providerId);
+  if (!existing) {
+    return { error: 'provider_not_found', summary: 'Provider record not found.' };
+  }
+
+  if (toolName === 'update_provider_profile') {
+    const updates: any = {};
+    if (args.name) updates.name = args.name;
+    if (args.category) updates.category = args.category;
+    if (args.neighborhood) updates.neighborhood = args.neighborhood;
+    if (args.phone) updates.phone = args.phone;
+    if (typeof args.price_min_pkr === 'number' && typeof args.price_max_pkr === 'number') {
+      updates.price_range_pkr = [args.price_min_pkr, args.price_max_pkr];
+    }
+    if (args.availability && typeof args.availability === 'object') {
+      updates.availability = { ...(existing.availability ?? {}), ...args.availability };
+    }
+    const updated = { ...existing, ...updates };
+    await addProvider(updated, userId);
+    return {
+      status: 'updated',
+      changed_fields: Object.keys(updates),
+      summary: `Updated ${Object.keys(updates).join(', ')}.`,
+    };
+  }
+
+  if (toolName === 'set_availability_override') {
+    const overrides: any[] = Array.isArray(existing.availability_overrides)
+      ? [...existing.availability_overrides]
+      : [];
+    const existingIdx = overrides.findIndex((o) => o?.date === args.date);
+    const entry: any = { date: args.date, hours: Array.isArray(args.hours) ? args.hours : [] };
+    if (args.note) entry.note = args.note;
+    if (existingIdx >= 0) overrides[existingIdx] = entry;
+    else overrides.push(entry);
+    const updated = { ...existing, availability_overrides: overrides };
+    await addProvider(updated, userId);
+    return {
+      status: 'override_set',
+      date: args.date,
+      hours: entry.hours,
+      summary: entry.hours.length === 0
+        ? `${args.date}: closed all day.`
+        : `${args.date}: open ${entry.hours.join(', ')}.`,
+    };
+  }
+
+  if (toolName === 'remove_availability_override') {
+    const overrides: any[] = Array.isArray(existing.availability_overrides)
+      ? existing.availability_overrides.filter((o: any) => o?.date !== args.date)
+      : [];
+    const updated = { ...existing, availability_overrides: overrides };
+    await addProvider(updated, userId);
+    return {
+      status: 'override_removed',
+      date: args.date,
+      summary: `Removed override for ${args.date}.`,
+    };
+  }
+
+  return { error: 'unknown_tool', summary: `Unknown tool ${toolName}.` };
+}
 
 let _ai: GoogleGenAI | null = null;
 function getAi(): GoogleGenAI {
@@ -320,6 +493,7 @@ export function attachLiveVoice(server: HttpServer): void {
     let userName = '';
     let language = 'roman_ur';
     let userGender = 'female';
+    let mode: 'user' | 'provider' = 'user';
     let closed = false;
 
     const send = (frame: ServerFrame) => {
@@ -355,20 +529,36 @@ export function attachLiveVoice(server: HttpServer): void {
           userName = (frame.user_name ?? '').trim();
           language = frame.language ?? language;
           userGender = frame.user_gender ?? userGender;
+          mode = frame.mode === 'provider' ? 'provider' : 'user';
 
-          // Personalize the prompt with the user's name + gender so the
-          // model can greet them by name and pick gender-matched verbs.
+          // Compute Pakistan-local today / tomorrow so the provider-mode
+          // prompt can resolve "kal" / "aaj" before calling tools.
+          const nowIsoPK = new Date()
+            .toLocaleString('sv-SE', { timeZone: 'Asia/Karachi' })
+            .replace(' ', 'T') + '+05:00';
+          const todayPK = nowIsoPK.slice(0, 10);
+          const [_y, _m, _d] = todayPK.split('-').map((s) => parseInt(s, 10));
+          const _tomorrow = new Date(Date.UTC(_y, _m - 1, _d + 1)).toISOString().slice(0, 10);
+
+          const baseSystemPrompt = mode === 'provider' ? PROVIDER_SYSTEM_PROMPT : SYSTEM_PROMPT;
+
           const personalSystemPrompt =
-            SYSTEM_PROMPT +
+            baseSystemPrompt +
             `\n\n═══════════════════════════════════════════════════════\n` +
             `USER INFO\n` +
             `═══════════════════════════════════════════════════════\n` +
             `Name: ${userName || '(unknown)'}\n` +
             `Gender: ${userGender}\n` +
             `Language: ${language}\n` +
-            (userName
-              ? `When the session opens, your VERY FIRST utterance must greet ${userName} by name: "Assalamu Alaikum ${userName}!" — warm, friendly, then ask how you can help ("kaisi madad chahiye?" / "kya kaam karwana hai aaj?"). Don't wait for the user to speak first.`
-              : `When the session opens, your VERY FIRST utterance must be: "Assalamu Alaikum! TapKar AI mein khush aamdeed. Kya kaam karwana hai aaj?" — don't wait for the user to speak first.`);
+            `Mode: ${mode}\n` +
+            `Today (Asia/Karachi): ${todayPK}. "kal" / "tomorrow" = ${_tomorrow}.\n` +
+            (mode === 'provider'
+              ? (userName
+                ? `When the session opens, your VERY FIRST utterance must be a warm greeting: "Assalamu Alaikum ${userName}! Apne profile mein kya update karna hai?" — don't wait for them to speak first.`
+                : `When the session opens, your VERY FIRST utterance must be: "Assalamu Alaikum! Profile update karne ke liye batayein kya chahiye." — don't wait.`)
+              : (userName
+                ? `When the session opens, your VERY FIRST utterance must greet ${userName} by name: "Assalamu Alaikum ${userName}!" — warm, friendly, then ask how you can help ("kaisi madad chahiye?" / "kya kaam karwana hai aaj?"). Don't wait for the user to speak first.`
+                : `When the session opens, your VERY FIRST utterance must be: "Assalamu Alaikum! TapKar AI mein khush aamdeed. Kya kaam karwana hai aaj?" — don't wait for the user to speak first.`));
 
           session = await getAi().live.connect({
             model: LIVE_MODEL,
@@ -377,7 +567,7 @@ export function attachLiveVoice(server: HttpServer): void {
               systemInstruction: {
                 parts: [{ text: personalSystemPrompt }],
               },
-              tools: [BOOKING_TOOL as any],
+              tools: [(mode === 'provider' ? PROVIDER_TOOLS : BOOKING_TOOL) as any],
               // Voice picked per user gender (matches our gender-aware
               // TTS strategy elsewhere in the app).
               speechConfig: {
@@ -425,6 +615,11 @@ export function attachLiveVoice(server: HttpServer): void {
                         tool: { name: fc.name, args: fc.args },
                         state: 'thinking',
                       });
+                      const isProviderTool =
+                        fc.name === 'update_provider_profile' ||
+                        fc.name === 'set_availability_override' ||
+                        fc.name === 'remove_availability_override';
+
                       if (fc.name === 'book_a_service') {
                         try {
                           const result = await executeBookingPipeline(
@@ -444,6 +639,28 @@ export function attachLiveVoice(server: HttpServer): void {
                           });
                           send({ type: 'tool_result', step: result, state: 'speaking' });
                         } catch (err: any) {
+                          session?.sendToolResponse({
+                            functionResponses: [
+                              {
+                                id: fc.id,
+                                name: fc.name,
+                                response: { error: err?.message ?? String(err) },
+                              },
+                            ],
+                          });
+                        }
+                      } else if (isProviderTool) {
+                        try {
+                          const result = await executeProviderTool(fc.name, fc.args ?? {}, userId);
+                          console.log(`[live] provider tool ${fc.name} ->`, JSON.stringify(result).slice(0, 120));
+                          session?.sendToolResponse({
+                            functionResponses: [
+                              { id: fc.id, name: fc.name, response: result },
+                            ],
+                          });
+                          send({ type: 'tool_result', step: result, state: 'speaking' });
+                        } catch (err: any) {
+                          console.error(`[live] provider tool ${fc.name} failed:`, err?.message ?? err);
                           session?.sendToolResponse({
                             functionResponses: [
                               {

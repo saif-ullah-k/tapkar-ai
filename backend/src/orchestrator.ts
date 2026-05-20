@@ -892,10 +892,54 @@ export async function* runPipeline(input: RunInput): AsyncGenerator<StreamEvent>
       await appendStep(run_id, step);
       yield { event: 'step', data: step as any };
 
-      // After BOOKING: if the agent needs the user to pick from alternatives,
-      // surface that to the user as a chat message and stop the pipeline.
+      // After BOOKING success: emit a chat message with the booking
+      // details — provider name, rating, neighborhood, time, price.
+      // Previously the success path went straight to followup with no
+      // user-facing confirmation, so the chat just sat silent until
+      // the followup agent ran ~15 s later.
       if (agentName === 'booking') {
         const b = result.output as any;
+        if (b?.booking_id && (b.status === 'requested' || b.status === 'confirmed')) {
+          const { getBookingFromStore } = await import('./store.js');
+          const booking = (await getBookingFromStore(b.booking_id)) as any;
+          if (booking) {
+            const userLang = (state.user_language as string | null) ?? 'en';
+            // Format time nicely in PKT (booking time_iso is +05:00).
+            const t = booking.time_iso ?? '';
+            const dateStr = t.slice(0, 10);
+            const timeStr = t.slice(11, 16); // "HH:MM"
+            const priceLo = (booking.estimated_price_pkr ?? [])[0];
+            const priceHi = (booking.estimated_price_pkr ?? [])[1];
+            const priceStr =
+              typeof priceLo === 'number' && typeof priceHi === 'number'
+                ? `${priceLo}-${priceHi} PKR`
+                : '';
+            const ratingStr =
+              typeof booking.provider_rating === 'number'
+                ? `${booking.provider_rating}★`
+                : '';
+            const msg = userLang === 'ur'
+              ? `بکنگ ہو گئی! ${booking.provider_name}${ratingStr ? ' (' + ratingStr + ')' : ''}${booking.provider_neighborhood ? '، ' + booking.provider_neighborhood : ''}۔ وقت: ${dateStr} ${timeStr}${priceStr ? '۔ تخمینہ: ' + priceStr : ''}۔ مزید کچھ چاہیے؟`
+              : userLang === 'roman_ur'
+                ? `Booking ho gayi! ${booking.provider_name}${ratingStr ? ' (' + ratingStr + ')' : ''}${booking.provider_neighborhood ? ', ' + booking.provider_neighborhood : ''}. Time: ${dateStr} ${timeStr}${priceStr ? '. Estimate: ' + priceStr : ''}. Aur kuch chahiye?`
+                : `Booked! ${booking.provider_name}${ratingStr ? ' (' + ratingStr + ')' : ''}${booking.provider_neighborhood ? ', ' + booking.provider_neighborhood : ''}. Time: ${dateStr} ${timeStr}${priceStr ? '. Estimate: ' + priceStr : ''}. Anything else?`;
+            yield {
+              event: 'user_message',
+              data: {
+                text: msg,
+                language: userLang,
+                booking_summary: {
+                  booking_id: booking.id,
+                  provider_name: booking.provider_name,
+                  provider_rating: booking.provider_rating,
+                  provider_neighborhood: booking.provider_neighborhood,
+                  time_iso: booking.time_iso,
+                  price_range_pkr: booking.estimated_price_pkr,
+                },
+              },
+            };
+          }
+        }
         if (b?.status === 'needs_user_choice') {
           const alternativesText =
             (b.alternatives as Array<any> | undefined)
