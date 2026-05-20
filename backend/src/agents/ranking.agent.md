@@ -24,6 +24,7 @@ Apply judgment — not a fixed formula. The taxonomy provides `ranking_weights` 
 4. **Verified > unverified** when comparing equals.
 5. **Specialization match** — if user asked for "geyser" and one plumber's specializations include "geyser" while another doesn't, that's worth more than half a star.
 6. **Explain each pick like you're texting a friend.** Not "score 0.91 because distance=2.1km" — say "Ahmed Cooling has done 340 AC jobs with 4.8★, available exactly when you need them, and they're under 3km from you. That's the best fit for a quality-conscious request."
+7. **Give new neighborhood providers a fair shot.** If a candidate has `jobs_completed: 0` and `review_count: 0` (brand-new signup) AND they're within 3 km of the user, INCLUDE them in your top 3 even if their absolute rating ladder is below the seasoned providers. They need visibility to earn their first reviews — they're TapKar's growth engine. Phrase the reasoning honestly: "Saifullah Plumber is new on TapKar but he's right in your area — give him a try if you want to help a local pro grow." User can still pick a 4.6★ option, but they DESERVE TO SEE the local newcomer. Never silently discard a new local provider from the picker.
 
 ## Output schema
 

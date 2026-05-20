@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../i18n.dart';
+import '../services/notifications.dart';
 import '../services/provider_api.dart';
 import '../state/auth_state.dart';
 import '../theme.dart';
@@ -222,12 +224,27 @@ class _ProviderJobsTabState extends State<_ProviderJobsTab> {
   /// the backend; discovery filters out OFF providers.
   bool _availableNow = true;
   bool _togglingAvailability = false;
+  /// Auto-refresh while the tab is visible. 3 s tick — keeps the jobs
+  /// list real-time-ish so providers see new bookings without manual
+  /// pull-to-refresh. Tracked id-set so we can fire a notification when
+  /// a brand-new booking lands.
+  Timer? _pollTimer;
+  Set<String> _knownBookingIds = const {};
 
   @override
   void initState() {
     super.initState();
     _load();
     _hydrateAvailability();
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (mounted) _load(silent: true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _hydrateAvailability() async {
@@ -262,22 +279,47 @@ class _ProviderJobsTabState extends State<_ProviderJobsTab> {
     }
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final bookings = await _api.listMyBookings(widget.auth.providerId!);
-      setState(() {
-        _bookings = bookings;
-        _loading = false;
-      });
+      // Fire a local notification for any booking we haven't seen before
+      // (skip the very first load — that's just hydration, not "new").
+      if (_knownBookingIds.isNotEmpty) {
+        for (final b in bookings) {
+          final id = b['id'] as String?;
+          if (id != null && !_knownBookingIds.contains(id)) {
+            final cat = (b['service_category_id'] as String?) ?? 'service';
+            final time = (b['time_iso'] as String?) ?? '';
+            Notifications.instance.newJobReceived(
+              category: cat,
+              timeIso: time,
+            );
+          }
+        }
+      }
+      _knownBookingIds = bookings
+          .map((b) => b['id'] as String?)
+          .whereType<String>()
+          .toSet();
+      if (mounted) {
+        setState(() {
+          _bookings = bookings;
+          _loading = false;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
     }
   }
 

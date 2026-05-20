@@ -27,10 +27,10 @@ class _BookingsScreenState extends State<BookingsScreen> {
   void initState() {
     super.initState();
     _load();
-    // Auto-refresh every 8 s while the tab is mounted so a provider
-    // accepting a booking elsewhere updates the customer's status pill
-    // here without a manual pull-to-refresh.
-    _refreshTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+    // Real-time-ish — 3 s polling while the tab is visible. Server-side
+    // booking updates land within a few seconds of any status change
+    // (provider accepts, completes, etc.) without manual refresh.
+    _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (mounted) _load(silent: true);
     });
   }

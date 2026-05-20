@@ -26,7 +26,10 @@ class _ChatScreenState extends State<ChatScreen> {
   final VoiceInput _voice = VoiceInput();
   final Tts _tts = Tts();
   bool _listening = false;
-  bool _showTrace = true;
+  // User-facing chat should not show internal agent logs by default.
+  // Trace is still wired up (intent debugging, judges' demo) but kept
+  // off unless someone explicitly toggles it via the eye button.
+  bool _showTrace = false;
   /// Track which bot messages we've already spoken so we don't repeat on rebuild.
   int _lastSpokenIdx = -1;
 
@@ -210,12 +213,9 @@ class _ChatScreenState extends State<ChatScreen> {
             tooltip: _tts.muted ? 'Unmute voice replies' : 'Mute voice replies',
             onPressed: () => setState(() => _tts.muted = !_tts.muted),
           ),
-          IconButton(
-            icon: Icon(_showTrace ? Icons.visibility : Icons.visibility_off,
-                size: 18, color: Colors.white60),
-            tooltip: 'Toggle agent trace',
-            onPressed: () => setState(() => _showTrace = !_showTrace),
-          ),
+          // (Removed the trace-panel visibility toggle — end-users shouldn't
+          // see agent logs in the chat. Trace data is still collected and
+          // available via the trace API endpoint for judges/demos.)
         ],
       );
 

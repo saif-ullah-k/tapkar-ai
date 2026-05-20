@@ -94,4 +94,20 @@ class Notifications {
       '$providerName has completed your booking.',
     );
   }
+
+  /// Provider-side: fires when a new booking arrives. The provider's
+  /// jobs tab notices the new id during polling and calls this so the
+  /// provider hears a ping even when the app isn't in foreground.
+  Future<void> newJobReceived({
+    required String category,
+    String timeIso = '',
+  }) async {
+    final readable = category.replaceAll('_', ' ');
+    await _show(
+      'New booking request',
+      timeIso.isNotEmpty
+          ? 'New $readable job — ${timeIso.substring(0, 16).replaceAll('T', ' ')}'
+          : 'You have a new $readable booking request',
+    );
+  }
 }

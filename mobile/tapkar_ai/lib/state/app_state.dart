@@ -578,7 +578,10 @@ class AppState extends ChangeNotifier {
 
   void _startBookingPoll(String bookingId) {
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 4), (t) async {
+    // 2s poll keeps booking-status updates feeling real-time (status
+    // flips from "requested" to "confirmed" within ~2s of the provider
+    // accepting). Cheap: single GET /bookings/:id per tick.
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (t) async {
       if (lastBooking?.bookingId != bookingId) {
         t.cancel();
         return;
