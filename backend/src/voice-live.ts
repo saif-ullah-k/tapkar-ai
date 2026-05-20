@@ -144,9 +144,10 @@ PERSONALITY (Karachi friend, not bot):
 - Filler natural — "abhi update karta/karti hoon", "thoda check karein".
 
 WHAT YOU CAN DO:
-1. **Update profile fields** — name, category, neighborhood, phone, price range, languages, weekly availability hours. Use \`update_provider_profile\` tool.
-2. **Set date-specific off-days or hour exceptions** — e.g. "kal 10-12 nahi", "Friday off", "Saturday se peeche short hours". Use \`set_availability_override\` tool. Empty hours = closed all day.
-3. **Remove an override** — provider says "kal wala remove kar do" → use \`remove_availability_override\`.
+1. **Create a new profile (signup)** — if the provider hasn't registered yet, you'll collect their info conversationally (name, category like plumber/electrician/AC tech, neighborhood, phone, price range, weekly hours) and call \`update_provider_profile\` with whatever you have. Backend creates a fresh profile on first call. Don't ask all fields at once — start with name and category, then add the rest one or two at a time.
+2. **Update profile fields** — name, category, neighborhood, phone, price range, languages, weekly availability hours. Use \`update_provider_profile\` tool. Existing profiles get patched in place.
+3. **Set date-specific off-days or hour exceptions** — e.g. "kal 10-12 nahi", "Friday off", "Saturday se peeche short hours". Use \`set_availability_override\` tool. Empty hours = closed all day.
+4. **Remove an override** — provider says "kal wala remove kar do" → use \`remove_availability_override\`.
 
 CRITICAL RULES:
 - PEHLE 1-2 word bolo, phir tool call karo. "Achha, abhi update karta hoon..." se start karo — NEVER silent tool call.
@@ -232,14 +233,51 @@ async function executeProviderTool(
   args: any,
   userId: string,
 ): Promise<any> {
-  const providerId = await getProviderIdForUser(userId);
-  if (!providerId) {
-    return { error: 'no_provider_profile', summary: 'No provider profile linked to this user.' };
-  }
+  let providerId = await getProviderIdForUser(userId);
   const all = loadProviders();
-  const existing: any = all.find((p) => p.id === providerId);
+  let existing: any = providerId ? all.find((p) => p.id === providerId) : undefined;
+
+  // SIGNUP path: no profile linked to this user yet. update_provider_profile
+  // is allowed to act as a creator — collect what the model has and seed a
+  // fresh profile. The other override tools still need an existing profile.
+  if (!existing && toolName === 'update_provider_profile') {
+    if (!args.name && !args.category) {
+      return {
+        status: 'need_more_info',
+        missing: ['name', 'category', 'neighborhood'],
+        summary: 'No profile yet. Need at least name + category + neighborhood to create one.',
+      };
+    }
+    providerId = `p_user_${userId.slice(-8)}`;
+    existing = {
+      id: providerId,
+      name: args.name ?? 'Unnamed provider',
+      category: args.category ?? 'general',
+      neighborhood: args.neighborhood ?? 'Karachi',
+      gender: args.gender ?? 'male',
+      languages: args.languages ?? ['ur', 'roman_ur'],
+      price_range_pkr: [1000, 5000],
+      availability: {
+        monday: [], tuesday: [], wednesday: [], thursday: [],
+        friday: [], saturday: [], sunday: [],
+      },
+      availability_overrides: [],
+      service_radius_km: 10,
+      rating: 0,
+      review_count: 0,
+      jobs_completed: 0,
+      years_experience: 0,
+      verified: false,
+      tags: ['newly_registered_via_voice'],
+      lat: 24.87,
+      lng: 67.03,
+    };
+    await addProvider(existing, userId);
+    console.log(`[provider-voice] created NEW profile ${providerId} for user ${userId}`);
+  }
+
   if (!existing) {
-    return { error: 'provider_not_found', summary: 'Provider record not found.' };
+    return { error: 'no_provider_profile', summary: 'No provider profile. Call update_provider_profile first with name + category + neighborhood.' };
   }
 
   if (toolName === 'update_provider_profile') {
@@ -258,8 +296,9 @@ async function executeProviderTool(
     await addProvider(updated, userId);
     return {
       status: 'updated',
+      provider_id: providerId,
       changed_fields: Object.keys(updates),
-      summary: `Updated ${Object.keys(updates).join(', ')}.`,
+      summary: `Updated ${Object.keys(updates).join(', ') || 'profile (created)'}.`,
     };
   }
 

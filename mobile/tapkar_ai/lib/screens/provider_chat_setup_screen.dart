@@ -6,6 +6,7 @@ import '../services/voice.dart';
 import '../state/auth_state.dart';
 import '../theme.dart';
 import '../widgets/voice_input_button.dart';
+import 'voice_live_screen.dart';
 
 /// AI-driven provider setup (or edit) via a conversational chat. The bot
 /// asks for each field one at a time, extracts answers from natural-language
@@ -325,6 +326,19 @@ class _ProviderChatSetupScreenState extends State<ProviderChatSetupScreen> {
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
         actions: [
+          // Voice mode — opens the live Gemini agent in provider mode.
+          // Available in BOTH signup (mode='signup') and edit (mode='edit')
+          // so a new provider can voice-create their profile from scratch
+          // if they prefer talking to typing.
+          IconButton(
+            icon: const Icon(Icons.graphic_eq, size: 20, color: AppColors.violet),
+            tooltip: 'Voice mode',
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => VoiceLiveScreen.forProvider(auth: widget.auth),
+              ));
+            },
+          ),
           IconButton(
             icon: Icon(_tts.muted ? Icons.volume_off : Icons.volume_up,
                 size: 18, color: Colors.white60),
