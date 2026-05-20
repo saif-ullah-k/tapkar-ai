@@ -68,6 +68,21 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
     )..repeat(reverse: true);
     _player.setReleaseMode(ReleaseMode.stop);
     _player.setPlayerMode(PlayerMode.mediaPlayer);
+    // Audio profile for a voice-assistant playback. With the default
+    // (USAGE_MEDIA + AUDIOFOCUS_GAIN) the player yanks audio focus from
+    // the recorder mid-stream — the mic stops capturing and subsequent
+    // turns get no input. voiceCommunication + AudioFocus.none lets the
+    // mic keep recording during playback. Speakerphone-on routes output
+    // through the loud speaker (matches the recorder's profile).
+    _player.setAudioContext(AudioContext(
+      android: const AudioContextAndroid(
+        isSpeakerphoneOn: true,
+        contentType: AndroidContentType.speech,
+        usageType: AndroidUsageType.voiceCommunication,
+        audioFocus: AndroidAudioFocus.none,
+        audioMode: AndroidAudioMode.inCommunication,
+      ),
+    ));
     _connect();
   }
 
@@ -108,6 +123,19 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
       encoder: AudioEncoder.pcm16bits,
       sampleRate: 16000,
       numChannels: 1,
+      // Android-specific. The default audio source (`mic`) loses focus the
+      // moment audioplayers starts playing the bot's response — the
+      // recorder pauses, and subsequent turns get no mic input even
+      // though the WS is still alive. `voiceCommunication` + the
+      // matching audio-manager mode is the VoIP profile that's expected
+      // to record AND play simultaneously, with built-in echo
+      // cancellation so the bot's speaker output doesn't loop back.
+      androidConfig: AndroidRecordConfig(
+        audioSource: AndroidAudioSource.voiceCommunication,
+        audioManagerMode: AudioManagerMode.modeInCommunication,
+        speakerphone: true,
+        manageBluetooth: false,
+      ),
     ));
     _micSub = stream.listen((chunk) {
       // Drop chunks while user has muted OR bot is mid-playback. Otherwise

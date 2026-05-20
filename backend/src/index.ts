@@ -219,9 +219,26 @@ Behavior:
 - NEVER re-ask for fields that are already in the profile. The user is editing, not signing up — they only mention what they want to change.
 - Don't blank out existing values unless the user explicitly says to remove them.`;
 
+  // Pakistan-local "today" + day-of-week for any relative phrases like
+  // "aaj se", "kal se", "har Friday". Without this the model has no
+  // ground truth for which weekday "today" is and assigns hours to the
+  // wrong day.
+  const nowIsoPK = new Date()
+    .toLocaleString('sv-SE', { timeZone: 'Asia/Karachi' })
+    .replace(' ', 'T') + '+05:00';
+  const todayPK = nowIsoPK.slice(0, 10);
+  const dayNamesPK = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const [py, pm, pd] = todayPK.split('-').map((s) => parseInt(s, 10));
+  const todayDow = dayNamesPK[new Date(Date.UTC(py, pm - 1, pd)).getUTCDay()];
+  const tomorrowDow = dayNamesPK[new Date(Date.UTC(py, pm - 1, pd + 1)).getUTCDay()];
+
   const systemPrompt = `You are a friendly TapKar AI assistant for service providers in Pakistan.
 
 Conduct a short, natural conversation in ${langName}. Ask ONE question at a time.
+
+CURRENT TIME (Asia/Karachi): ${nowIsoPK}
+TODAY is ${todayDow}. "aaj" / "today" = ${todayDow}. "kal" / "tomorrow" = ${tomorrowDow}.
+When the provider says "aaj se" / "from today" → apply hours starting from ${todayDow}. When they say "har ${todayDow}" → it means weekly on ${todayDow}. Never guess the day-of-week for relative phrases — these are the source of truth.
 
 ${genderTone}
 
