@@ -70,9 +70,16 @@ export type WeeklyAvailability = Record<
 export interface Provider {
   id: string;
   name: string;
+  /** Primary service category (one of taxonomy ids). */
   category: string;
+  /** A single provider can offer multiple services (e.g. cleaner + cook).
+   *  Discovery matches if category OR any additional_categories matches. */
+  additional_categories?: string[];
   specializations: string[];
+  /** Primary neighborhood (where the provider is based). */
   neighborhood: string;
+  /** Extra neighborhoods this provider also serves beyond their home base. */
+  service_areas?: string[];
   lat: number;
   lng: number;
   service_radius_km: number;
@@ -86,6 +93,17 @@ export interface Provider {
   phone: string;
   verified: boolean;
   tags: string[];
+  /** Short self-description shown on the customer's picker tile. */
+  bio?: string;
+  /** Data URL (base64) or http(s) URL of the provider's profile photo. */
+  profile_image_url?: string;
+  /** Provider gender — drives the `female_provider_required` ranking
+   *  preference (bridal, in-home beautician). */
+  gender?: 'female' | 'male' | 'other';
+  /** Provider's self-reported "I'm online and accepting jobs right now"
+   *  flag. When false, discovery filters them out even if their hours
+   *  cover the requested time. */
+  available_now?: boolean;
 }
 
 export interface ProviderCandidate extends Provider {

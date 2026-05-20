@@ -56,13 +56,79 @@ class ChatMessage {
   final bool fromUser;
   final String? language; // 'en' | 'ur' | 'roman_ur'
   final DateTime ts;
+  /// When the backend yields a `show_options` user_message, the alternatives
+  /// array is carried here so the chat can render a 3-tile picker instead of
+  /// a plain text bubble. Cleared once the user picks one.
+  final List<ProviderOption>? alternatives;
 
   ChatMessage({
     required this.text,
     required this.fromUser,
     this.language,
+    this.alternatives,
     DateTime? ts,
   }) : ts = ts ?? DateTime.now();
+
+  /// Serialize for SharedPreferences persistence. Picker `alternatives` are
+  /// intentionally NOT persisted — they reference a live ranking run; on
+  /// reload we treat them as already-resolved so the chat stays clean.
+  Map<String, dynamic> toJson() => {
+        'text': text,
+        'fromUser': fromUser,
+        if (language != null) 'language': language,
+        'ts': ts.toIso8601String(),
+      };
+
+  factory ChatMessage.fromJson(Map<String, dynamic> j) => ChatMessage(
+        text: (j['text'] as String?) ?? '',
+        fromUser: (j['fromUser'] as bool?) ?? false,
+        language: j['language'] as String?,
+        ts: DateTime.tryParse(j['ts'] as String? ?? '') ?? DateTime.now(),
+      );
+}
+
+class ProviderOption {
+  final String providerId;
+  final String providerName;
+  final double? rating;
+  final int? reviewCount;
+  final double? distanceKm;
+  final List<int>? priceRangePkr;
+  final String? neighborhood;
+  final bool verified;
+  final String? iso;
+  final String reasoning;
+  final String tradeoffs;
+
+  ProviderOption({
+    required this.providerId,
+    required this.providerName,
+    this.rating,
+    this.reviewCount,
+    this.distanceKm,
+    this.priceRangePkr,
+    this.neighborhood,
+    this.verified = false,
+    this.iso,
+    this.reasoning = '',
+    this.tradeoffs = '',
+  });
+
+  factory ProviderOption.fromJson(Map<String, dynamic> j) => ProviderOption(
+        providerId: j['provider_id'] as String? ?? '',
+        providerName: j['provider_name'] as String? ?? 'Unknown',
+        rating: (j['rating'] as num?)?.toDouble(),
+        reviewCount: j['review_count'] as int?,
+        distanceKm: (j['distance_km'] as num?)?.toDouble(),
+        priceRangePkr: (j['price_range_pkr'] as List?)
+            ?.map((e) => (e as num).toInt())
+            .toList(),
+        neighborhood: j['neighborhood'] as String?,
+        verified: j['verified'] as bool? ?? false,
+        iso: j['iso'] as String?,
+        reasoning: j['reasoning'] as String? ?? '',
+        tradeoffs: j['tradeoffs'] as String? ?? '',
+      );
 }
 
 class BookingResult {

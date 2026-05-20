@@ -9,6 +9,11 @@
 
 set -euo pipefail
 
+# Source local env so GOOGLE_MAPS_API_KEY, GEMINI_API_KEY etc. flow through.
+if [ -f backend/.env ]; then
+  set -a; . backend/.env; set +a
+fi
+
 # ─── Config ──────────────────────────────────────────────────────────────────
 PROJECT="${GCP_PROJECT:-fcmapp-30770}"
 REGION="${GCP_LOCATION:-us-central1}"
@@ -42,6 +47,7 @@ if ! $SKIP_APIS; then
     cloudbuild.googleapis.com \
     run.googleapis.com \
     aiplatform.googleapis.com \
+    texttospeech.googleapis.com \
     --project="$PROJECT"
 fi
 
@@ -91,9 +97,9 @@ gcloud run deploy "$SERVICE" \
   --cpu=1 \
   --timeout=600 \
   --concurrency=10 \
-  --max-instances=10 \
+  --max-instances=1 \
   --port=8080 \
-  --set-env-vars="USE_VERTEX_AI=true,GCP_PROJECT=${PROJECT},GCP_LOCATION=${REGION},GEMINI_MODEL=gemini-2.5-flash,GEMINI_FLASH_MODEL=gemini-2.5-flash,USE_REAL_PLACES=false,USE_FIRESTORE=false,DEBUG_TRACES=true,RUN_TIMEOUT_MS=480000,AGENT_TIMEOUT_MS=120000,MAX_STEPS=12"
+  --set-env-vars="USE_VERTEX_AI=true,GCP_PROJECT=${PROJECT},GCP_LOCATION=${REGION},GEMINI_MODEL=gemini-2.5-flash-lite,GEMINI_FLASH_MODEL=gemini-2.5-flash-lite,MODEL_INTENT=gemini-2.5-flash-lite,MODEL_BOOKING=gemini-2.5-flash,MODEL_DISCOVERY=gemini-2.5-flash-lite,MODEL_RANKING=gemini-2.5-flash-lite,MODEL_FOLLOWUP=gemini-2.5-flash-lite,USE_REAL_PLACES=true,GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-},USE_FIRESTORE=true,DEBUG_TRACES=true,RUN_TIMEOUT_MS=480000,AGENT_TIMEOUT_MS=120000,MAX_STEPS=8"
 
 # ─── 6. Smoke test ───────────────────────────────────────────────────────────
 URL=$(gcloud run services describe "$SERVICE" \

@@ -83,3 +83,16 @@ recordings/screenshots/*.png
 # Don't commit huge APK in the main repo; we'll attach to a GitHub release instead
 mobile/tapkar_ai/build/app/outputs/flutter-apk/*.apk
 *.aab
+
+# Test screenshots from iterative dev sessions (junk)
+test-*.png
+screen-after-font-fix.png
+
+# Claude Code session data
+.claude/
+
+# Firebase auto-generated / secrets — must not ship
+mobile/tapkar_ai/android/app/google-services.json
+mobile/tapkar_ai/ios/Runner/GoogleService-Info.plist
+mobile/tapkar_ai/lib/firebase_options.dart
+mobile/tapkar_ai/firebase.json

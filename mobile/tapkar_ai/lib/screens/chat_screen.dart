@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../i18n.dart';
+import '../services/tts.dart';
 import '../services/voice.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../widgets/booking_card.dart';
 import '../widgets/chat_bubble.dart';
+import '../widgets/picker_card.dart';
 import '../widgets/trace_panel.dart';
 import '../widgets/voice_input_button.dart';
-import 'role_picker_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final AppState state;
@@ -21,18 +23,24 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _input = TextEditingController();
   final ScrollController _chatScroll = ScrollController();
   final VoiceInput _voice = VoiceInput();
+  final Tts _tts = Tts();
   bool _listening = false;
   bool _showTrace = true;
+  /// Track which bot messages we've already spoken so we don't repeat on rebuild.
+  int _lastSpokenIdx = -1;
 
   @override
   void initState() {
     super.initState();
     widget.state.addListener(_onStateChange);
+    widget.state.addListener(_maybeSpeakLatest);
   }
 
   @override
   void dispose() {
     widget.state.removeListener(_onStateChange);
+    widget.state.removeListener(_maybeSpeakLatest);
+    _tts.stop();
     _input.dispose();
     _chatScroll.dispose();
     super.dispose();
@@ -54,18 +62,47 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _toggleVoice() async {
     if (_listening) {
+      // User tapped mic to stop dictation. Keep whatever was captured in the
+      // text field — they can edit and tap send when ready.
       await _voice.stop();
       setState(() => _listening = false);
       return;
     }
+    // Cancel any TTS that might be speaking the previous bot reply so the
+    // mic doesn't pick up the bot's own voice.
+    await _tts.stop();
+    // Warn once when the device doesn't have an STT pack for the user's
+    // chosen language. Voice will still work (English fallback) but text
+    // will come out Latin-script regardless.
+    final lang = widget.state.auth.language;
+    if (lang == 'ur') {
+      final installed = await _voice.isInstalledForApp('ur');
+      if (!installed && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: Duration(seconds: 4),
+            content: Text(
+              'Urdu speech recognition is not installed on this device. '
+              'Settings → System → Languages → Speech recognition → add Urdu.',
+              style: TextStyle(fontSize: 12),
+            ),
+          ),
+        );
+      }
+    }
     setState(() => _listening = true);
     try {
-      final txt = await _voice.listen(onPartial: (p) {
+      final txt = await _voice.listen(
+        appLanguage: widget.state.auth.language,
+        onPartial: (p) {
         _input.text = p;
         _input.selection = TextSelection.collapsed(offset: p.length);
       });
       _input.text = txt;
       _input.selection = TextSelection.collapsed(offset: txt.length);
+      // No auto-send — let the user review the transcript, edit it if STT
+      // misheard, then explicitly tap the send button. Auto-send used to
+      // fire mid-thought after a short pause and was disorienting.
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -74,6 +111,26 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }
     setState(() => _listening = false);
+  }
+
+  /// Called on every state change. If the latest message is a NEW bot reply
+  /// (text + alternatives-aware) we speak it aloud.
+  void _maybeSpeakLatest() {
+    final msgs = widget.state.messages;
+    if (msgs.isEmpty) return;
+    final idx = msgs.length - 1;
+    if (idx <= _lastSpokenIdx) return;
+    final m = msgs[idx];
+    if (m.fromUser) {
+      _lastSpokenIdx = idx; // skip user msgs but advance pointer
+      return;
+    }
+    _lastSpokenIdx = idx;
+    _tts.speak(
+      m.text,
+      lang: m.language ?? widget.state.auth.language,
+      gender: widget.state.auth.gender,
+    );
   }
 
   void _send() {
@@ -152,24 +209,67 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.edit_square, size: 18, color: Colors.white60),
+            tooltip: 'New chat',
+            onPressed: _confirmNewChat,
+          ),
+          IconButton(
+            icon: Icon(_tts.muted ? Icons.volume_off : Icons.volume_up,
+                size: 18, color: Colors.white60),
+            tooltip: _tts.muted ? 'Unmute voice replies' : 'Mute voice replies',
+            onPressed: () => setState(() => _tts.muted = !_tts.muted),
+          ),
+          IconButton(
             icon: Icon(_showTrace ? Icons.visibility : Icons.visibility_off,
                 size: 18, color: Colors.white60),
             tooltip: 'Toggle agent trace',
             onPressed: () => setState(() => _showTrace = !_showTrace),
           ),
-          IconButton(
-            icon: const Icon(Icons.swap_horiz, size: 20, color: Colors.white60),
-            tooltip: 'Switch to provider mode',
-            onPressed: () {
-              Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => RolePickerScreen(
-                  onCancel: () => Navigator.of(context).pop(),
-                ),
-              ));
-            },
-          ),
         ],
       );
+
+  Future<void> _confirmNewChat() async {
+    // No prompt if the chat is already empty — just no-op.
+    if (widget.state.messages.isEmpty && widget.state.lastBooking == null) return;
+    final lang = widget.state.auth.language;
+    final title = {
+      'en': 'Start a new chat?',
+      'ur': 'نئی گفتگو شروع کریں؟',
+      'roman_ur': 'Nayi chat shuru karein?',
+    }[lang] ?? 'Start a new chat?';
+    final body = {
+      'en': 'This clears the current conversation. Your bookings stay safe.',
+      'ur': 'یہ موجودہ گفتگو ختم کر دے گا۔ آپ کی بکنگز محفوظ رہیں گی۔',
+      'roman_ur': 'Ye current chat clear kar dega. Aap ki bookings safe rahein gi.',
+    }[lang] ?? 'This clears the current conversation. Your bookings stay safe.';
+    final cancel = {'en': 'Cancel', 'ur': 'منسوخ کریں', 'roman_ur': 'Cancel'}[lang] ?? 'Cancel';
+    final ok = {'en': 'New chat', 'ur': 'نئی گفتگو', 'roman_ur': 'Nayi chat'}[lang] ?? 'New chat';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text(title, style: AppFonts.base(size: 16, weight: FontWeight.w700)),
+        content: Text(body, style: AppFonts.base(size: 13, color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(cancel, style: AppFonts.base(size: 13, color: Colors.white60)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(ok,
+                style: AppFonts.base(size: 13, weight: FontWeight.w700, color: AppColors.violet)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await widget.state.clearPersistedChat();
+    _tts.stop();
+    _input.clear();
+    _lastSpokenIdx = -1;
+  }
 
   Widget _chatPane() {
     final s = widget.state;
@@ -184,6 +284,29 @@ class _ChatScreenState extends State<ChatScreen> {
                   itemCount: s.messages.length + (s.lastBooking != null ? 1 : 0),
                   itemBuilder: (_, i) {
                     if (i < s.messages.length) {
+                      final m = s.messages[i];
+                      // If this is a show-options message, render the bubble
+                      // followed by selectable provider tiles. Tiles stay
+                      // tappable until the user picks (which strips
+                      // alternatives from the message) — they should NOT be
+                      // disabled just because a later reminder bubble arrived.
+                      if (m.alternatives != null && m.alternatives!.isNotEmpty) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ChatBubble(message: m),
+                              const SizedBox(height: 8),
+                              PickerCard(
+                                options: m.alternatives!,
+                                disabled: s.status == RunStatus.running,
+                                onPick: (opt) => widget.state.pickProvider(opt),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
                       return ChatBubble(message: s.messages[i]);
                     }
                     return BookingCard(booking: s.lastBooking!);
@@ -252,6 +375,34 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  static const _pipelineAgents = ['intent', 'discovery', 'ranking', 'booking', 'followup'];
+  /// In locked-mode (user already picked a provider from a prior turn), the
+  /// orchestrator skips discovery + ranking and only runs intent + booking.
+  /// We can't directly observe orchestrator state from the chat, but the
+  /// last user message echoing "Selected: …" is a reliable hint.
+  bool get _isLockedMode {
+    if (widget.state.messages.isEmpty) return false;
+    final last = widget.state.messages.last;
+    if (!last.fromUser) return false;
+    final t = last.text.toLowerCase();
+    return t.startsWith('selected:') ||
+        t.startsWith('select kiya:') ||
+        t.startsWith('منتخب کیا'); // urdu
+  }
+
+  String _currentAgentLabel() {
+    final done = widget.state.traceSteps.length;
+    if (_isLockedMode) {
+      // Locked pipeline: intent → booking only. Followup runs async on the
+      // server and won't appear until after run_complete.
+      const locked = ['intent', 'booking'];
+      if (done >= locked.length) return 'finishing up';
+      return locked[done];
+    }
+    if (done >= _pipelineAgents.length) return 'finishing up';
+    return _pipelineAgents[done];
+  }
+
   Widget _runningIndicator() => Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         child: Row(
@@ -262,9 +413,11 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             const SizedBox(width: 8),
             Text(
-              widget.state.traceSteps.isEmpty
-                  ? 'Connecting…'
-                  : 'Agent ${widget.state.traceSteps.last.agent} thinking…',
+              () {
+                final total = _isLockedMode ? 2 : 5;
+                final done = widget.state.traceSteps.length.clamp(0, total);
+                return 'Agent ${_currentAgentLabel()} working… ($done/$total)';
+              }(),
               style: AppFonts.base(size: 12, color: Colors.white60),
             ),
           ],
@@ -340,7 +493,7 @@ class _ChatScreenState extends State<ChatScreen> {
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => _send(),
               decoration: InputDecoration(
-                hintText: 'Type or tap mic…',
+                hintText: T(widget.state.auth.language).chatInputHint,
                 hintStyle: AppFonts.base(size: 13, color: Colors.white38),
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(
@@ -366,7 +519,8 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           const SizedBox(width: 6),
           IconButton(
-            onPressed: widget.state.status == RunStatus.running ? null : _send,
+            // Always enabled — sendMessage queues if a run is in flight.
+            onPressed: _send,
             icon: Container(
               width: 32, height: 32,
               decoration: BoxDecoration(

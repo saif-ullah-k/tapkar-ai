@@ -4,16 +4,20 @@ import 'package:http/http.dart' as http;
 
 /// Backend API client. Streams `/run` events as parsed SSE blocks.
 class ApiClient {
-  /// Override at build time: --dart-define=API_URL=http://10.0.2.2:8080
+  /// Override at build time: --dart-define=API_URL=http://10.0.2.2:8080 for local dev.
   static const String baseUrl =
-      String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:8080');
+      String.fromEnvironment('API_URL', defaultValue: 'https://tapkar-ai-backend-d56rhra4sa-uc.a.run.app');
 
   /// Stream POST /run as Server-Sent Events.
   /// Yields a stream of {event, data} maps as the backend emits them.
   Stream<SseEvent> run({
     required String userId,
     required String userInput,
-    String? conversationId,
+    String? language,
+    String? selectedProviderId,
+    String? selectedTimeIso,
+    Map<String, dynamic>? priorIntent,
+    String? userGender,
   }) async* {
     final req = http.Request('POST', Uri.parse('$baseUrl/run'));
     req.headers['Content-Type'] = 'application/json';
@@ -21,7 +25,15 @@ class ApiClient {
     req.body = jsonEncode({
       'user_id': userId,
       'user_input': userInput,
-      if (conversationId != null) 'conversation_id': conversationId,
+      if (language != null) 'language': language,
+      if (selectedProviderId != null) 'selected_provider_id': selectedProviderId,
+      if (selectedTimeIso != null) 'selected_time_iso': selectedTimeIso,
+      // Echo the intent from the previous run — backend skips re-parsing
+      // intent in locked mode, saving ~10 s on the booking flow.
+      if (priorIntent != null) 'prior_intent': priorIntent,
+      // User's gender — bot speaks with matching grammatical gender in
+      // Urdu/Roman Urdu ("dhond rahi hoon" vs "dhond raha hoon").
+      if (userGender != null) 'user_gender': userGender,
     });
 
     final response = await req.send();

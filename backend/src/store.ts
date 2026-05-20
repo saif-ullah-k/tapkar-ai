@@ -24,6 +24,23 @@ async function getFirestore(): Promise<any> {
   return _firestore;
 }
 
+/** Recursively strip `undefined` values from an object so Firestore writes
+ *  never reject. Firestore allows null but not undefined. */
+function stripUndefined<T>(obj: T): T {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) {
+    return obj
+      .map((v) => stripUndefined(v))
+      .filter((v) => v !== undefined) as unknown as T;
+  }
+  const out: any = {};
+  for (const [k, v] of Object.entries(obj as any)) {
+    if (v === undefined) continue;
+    out[k] = stripUndefined(v as any);
+  }
+  return out as T;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // In-memory backing (Day 1 default)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,7 +64,7 @@ export async function putTrace(trace: Trace): Promise<void> {
   // Firestore write is best-effort — never let it crash the pipeline.
   try {
     const fs = await getFirestore();
-    if (fs) await fs.doc(`traces/${trace.run_id}`).set(trace);
+    if (fs) await fs.doc(`traces/${trace.run_id}`).set(stripUndefined(trace));
   } catch (e: any) {
     console.warn(`[store] putTrace Firestore write failed (ignored):`, e?.message ?? e);
   }
@@ -65,7 +82,7 @@ export async function appendTraceStep(runId: string, step: TraceStep): Promise<v
     if (fs) {
       const { FieldValue } = await import('@google-cloud/firestore');
       await fs.doc(`traces/${runId}`).set(
-        { steps: FieldValue.arrayUnion(step) },
+        { steps: FieldValue.arrayUnion(stripUndefined(step)) },
         { merge: true }
       );
     }
@@ -127,8 +144,12 @@ export function subscribeTrace(runId: string, cb: (step: TraceStep) => void): ()
 
 export async function putBooking(booking: Booking): Promise<void> {
   mem.bookings.set(booking.id, booking);
-  const fs = await getFirestore();
-  if (fs) await fs.doc(`bookings/${booking.id}`).set(booking);
+  try {
+    const fs = await getFirestore();
+    if (fs) await fs.doc(`bookings/${booking.id}`).set(stripUndefined(booking));
+  } catch (e: any) {
+    console.warn('[store] putBooking Firestore write failed (ignored):', e?.message ?? e);
+  }
 }
 
 export async function getBookingFromStore(id: string): Promise<Booking | null> {
@@ -139,44 +160,153 @@ export async function getBookingFromStore(id: string): Promise<Booking | null> {
   return snap.exists ? (snap.data() as Booking) : null;
 }
 
+/** Merge in-memory + Firestore bookings into a single deduped map. */
+async function _allBookings(): Promise<Map<string, Booking>> {
+  const out = new Map<string, Booking>(mem.bookings);
+  try {
+    const fs = await getFirestore();
+    if (fs) {
+      const snap = await fs.collection('bookings').get();
+      snap.forEach((doc: any) => {
+        const b = doc.data() as Booking;
+        if (b?.id && !out.has(b.id)) out.set(b.id, b);
+      });
+    }
+  } catch (e: any) {
+    console.warn('[store] _allBookings Firestore read failed (ignored):', e?.message ?? e);
+  }
+  return out;
+}
+
 export async function listBookingsForProvider(
   providerId: string,
   atIso: string
 ): Promise<Booking[]> {
-  const all = Array.from(mem.bookings.values()).filter(
+  const all = await _allBookings();
+  return Array.from(all.values()).filter(
     (b) => b.provider_id === providerId && b.time_iso === atIso && b.status !== 'cancelled'
   );
-  return all;
 }
 
 /** All bookings for a provider, newest first. Used by provider-mode screen. */
 export async function listAllBookingsForProvider(
   providerId: string
 ): Promise<Booking[]> {
-  return Array.from(mem.bookings.values())
+  const all = await _allBookings();
+  return Array.from(all.values())
     .filter((b) => b.provider_id === providerId)
     .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
 }
 
+/** Merge in-memory + Firestore inbox messages. */
+async function _allInboxMessages(): Promise<any[]> {
+  const out = new Map<string, any>();
+  for (const [k, v] of mem.inbox) out.set(k, v);
+  try {
+    const fs = await getFirestore();
+    if (fs) {
+      const snap = await fs.collection('mock_inbox').get();
+      snap.forEach((doc: any) => {
+        const m = doc.data();
+        const key = m.message_id ?? doc.id;
+        if (!out.has(key)) out.set(key, m);
+      });
+    }
+  } catch (e: any) {
+    console.warn('[store] _allInboxMessages Firestore read failed (ignored):', e?.message ?? e);
+  }
+  return Array.from(out.values());
+}
+
 /** All inbox messages addressed to a provider. */
 export async function listInboxForProvider(providerId: string): Promise<any[]> {
-  return Array.from(mem.inbox.values())
-    .filter((m: any) => m.to === 'provider' || m.to === 'both')
+  const all = await _allInboxMessages();
+  return all
+    .filter((m: any) => (m.to === 'provider' || m.to === 'both') &&
+      (m.provider_id === providerId || m.provider_id == null))
     .sort((a: any, b: any) => (b.ts ?? '').localeCompare(a.ts ?? ''));
+}
+
+/** All bookings for a user (customer side), newest first. */
+export async function listBookingsForUser(userId: string): Promise<Booking[]> {
+  const all = await _allBookings();
+  return Array.from(all.values())
+    .filter((b) => b.user_id === userId)
+    .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+}
+
+/** All inbox messages addressed to a user. */
+export async function listInboxForUser(userId: string): Promise<any[]> {
+  const all = await _allInboxMessages();
+  return all
+    .filter(
+      (m: any) =>
+        (m.to === 'user' || m.to === 'both') &&
+        (m.user_id === userId || m.user_id == null)
+    )
+    .sort((a: any, b: any) => (b.ts ?? '').localeCompare(a.ts ?? ''));
+}
+
+/** Merge in-memory + Firestore scheduled jobs. */
+async function _allJobs(): Promise<Map<string, ScheduledJob>> {
+  const out = new Map<string, ScheduledJob>(mem.jobs);
+  try {
+    const fs = await getFirestore();
+    if (fs) {
+      const snap = await fs.collection('scheduled_jobs').get();
+      snap.forEach((doc: any) => {
+        const j = doc.data() as ScheduledJob;
+        if (j?.id && !out.has(j.id)) out.set(j.id, j);
+      });
+    }
+  } catch (e: any) {
+    console.warn('[store] _allJobs Firestore read failed (ignored):', e?.message ?? e);
+  }
+  return out;
+}
+
+/** All scheduled jobs (reminders) tied to a user's bookings. */
+export async function listScheduledForUser(userId: string): Promise<ScheduledJob[]> {
+  const bookings = await _allBookings();
+  const userBookingIds = new Set(
+    Array.from(bookings.values()).filter((b) => b.user_id === userId).map((b) => b.id)
+  );
+  const jobs = await _allJobs();
+  return Array.from(jobs.values())
+    .filter((j) => userBookingIds.has(j.booking_id))
+    .sort((a, b) => (a.fire_at_iso ?? '').localeCompare(b.fire_at_iso ?? ''));
 }
 
 export async function updateBookingStatusInStore(
   id: string,
   status: Booking['status']
 ): Promise<void> {
-  const b = mem.bookings.get(id);
+  let b = mem.bookings.get(id);
+  // If not in memory (Cloud Run cycled), pull from Firestore first so we can
+  // update it and persist the new status.
+  if (!b) {
+    try {
+      const fs = await getFirestore();
+      if (fs) {
+        const snap = await fs.doc(`bookings/${id}`).get();
+        if (snap.exists) {
+          b = snap.data() as Booking;
+          mem.bookings.set(id, b);
+        }
+      }
+    } catch (_) {}
+  }
   if (b) {
     b.status = status;
     if (status === 'completed') b.completed_at = new Date().toISOString();
     mem.bookings.set(id, b);
   }
-  const fs = await getFirestore();
-  if (fs) await fs.doc(`bookings/${id}`).update({ status });
+  try {
+    const fs = await getFirestore();
+    if (fs) await fs.doc(`bookings/${id}`).set({ status }, { merge: true });
+  } catch (e: any) {
+    console.warn('[store] updateBookingStatus Firestore write failed (ignored):', e?.message ?? e);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,8 +315,12 @@ export async function updateBookingStatusInStore(
 
 export async function putJob(job: ScheduledJob): Promise<void> {
   mem.jobs.set(job.id, job);
-  const fs = await getFirestore();
-  if (fs) await fs.doc(`scheduled_jobs/${job.id}`).set(job);
+  try {
+    const fs = await getFirestore();
+    if (fs) await fs.doc(`scheduled_jobs/${job.id}`).set(stripUndefined(job));
+  } catch (e: any) {
+    console.warn('[store] putJob Firestore write failed (ignored):', e?.message ?? e);
+  }
 }
 
 export async function cancelJobsForBooking(bookingId: string): Promise<number> {
@@ -203,7 +337,8 @@ export async function cancelJobsForBooking(bookingId: string): Promise<number> {
 
 export async function listDueJobs(): Promise<ScheduledJob[]> {
   const now = Date.now();
-  return Array.from(mem.jobs.values()).filter(
+  const jobs = await _allJobs();
+  return Array.from(jobs.values()).filter(
     (j) => j.status === 'pending' && new Date(j.fire_at_iso).getTime() <= now
   );
 }
@@ -214,6 +349,10 @@ export async function listDueJobs(): Promise<ScheduledJob[]> {
 
 export async function putInboxMessage(message: any): Promise<void> {
   mem.inbox.set(message.message_id, message);
-  const fs = await getFirestore();
-  if (fs) await fs.doc(`mock_inbox/${message.message_id}`).set(message);
+  try {
+    const fs = await getFirestore();
+    if (fs) await fs.doc(`mock_inbox/${message.message_id}`).set(stripUndefined(message));
+  } catch (e: any) {
+    console.warn('[store] putInboxMessage Firestore write failed (ignored):', e?.message ?? e);
+  }
 }

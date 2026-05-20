@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import '../services/provider_api.dart';
+import '../state/auth_state.dart';
 import '../theme.dart';
-import 'provider_screen.dart';
 
 /// Lets the user pick which provider they want to "log in as".
 /// In production, this would be a real auth flow.
 class RolePickerScreen extends StatefulWidget {
   final VoidCallback onCancel;
-  const RolePickerScreen({super.key, required this.onCancel});
+  final AuthState? auth;
+  const RolePickerScreen({super.key, required this.onCancel, this.auth});
 
   @override
   State<RolePickerScreen> createState() => _RolePickerScreenState();
@@ -156,15 +157,16 @@ class _RolePickerScreenState extends State<RolePickerScreen> {
             style: AppFonts.base(size: 11, color: Colors.white60),
           ),
           trailing: const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.white38),
-          onTap: () {
-            Navigator.of(context).pushReplacement(MaterialPageRoute(
-              builder: (_) => ProviderScreen(
-                providerId: p['id'] as String,
-                providerName: p['name'] as String? ?? '?',
-                category: p['category'] as String?,
-                onSwitchBackToCustomer: () => Navigator.of(context).pop(),
-              ),
-            ));
+          onTap: () async {
+            // Persist provider identity into AuthState. main.dart's AnimatedBuilder
+            // sees isProviderMode flip and swaps the shell — no manual navigation.
+            await widget.auth?.switchToProvider(
+              providerId: p['id'] as String,
+              providerName: p['name'] as String? ?? '?',
+              providerCategory: p['category'] as String?,
+            );
+            if (!context.mounted) return;
+            Navigator.of(context).pop();
           },
         );
       },

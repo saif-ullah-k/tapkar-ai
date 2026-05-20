@@ -89,6 +89,23 @@ export async function runAgent(
   const collectedCalls: ToolCall[] = [];
   const nowIso = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Karachi' }).replace(' ', 'T') + '+05:00';
   const todayPK = nowIso.slice(0, 10);
+  // Compute day-of-week + tomorrow + day-after-tomorrow as PURE CALENDAR
+  // dates (no UTC math). Treat YYYY-MM-DD as a calendar value the way
+  // humans read it. The previous version used `new Date(iso)` which
+  // converted to UTC and gave the wrong day of week.
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const [py, pm, pd] = todayPK.split('-').map((s) => parseInt(s, 10));
+  const calendarUtc = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d));
+  const todayCal = calendarUtc(py, pm, pd);
+  const tomorrowCal = calendarUtc(py, pm, pd + 1);
+  const parsoCal = calendarUtc(py, pm, pd + 2);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const todayDow = dayNames[todayCal.getUTCDay()];
+  const tomorrowDow = dayNames[tomorrowCal.getUTCDay()];
+  const parsoDow = dayNames[parsoCal.getUTCDay()];
+  const tomorrowPK = fmt(tomorrowCal);
+  const parsoPK = fmt(parsoCal);
+
   const contents: any[] = [
     {
       role: 'user',
@@ -96,8 +113,10 @@ export async function runAgent(
         {
           text:
             `CURRENT TIME (Asia/Karachi): ${nowIso}\n` +
-            `TODAY'S DATE: ${todayPK}\n` +
-            `Use this for resolving relative phrases like "kal", "5 din baad", "agle hafte", etc.\n` +
+            `TODAY'S DATE: ${todayPK} (${todayDow})\n` +
+            `"kal" / "tomorrow" = ${tomorrowPK} (${tomorrowDow})\n` +
+            `"parsoo" / "day after tomorrow" = ${parsoPK} (${parsoDow})\n` +
+            `Use these EXACT dates when resolving relative phrases. "kal" in a service-booking conversation is ALWAYS tomorrow (future), never yesterday.\n` +
             `Reject (ask clarification) any time that resolves to BEFORE this current time.\n\n` +
             (opts.context ? opts.context + '\n\n' : '') +
             `CURRENT STATE\n\`\`\`json\n${JSON.stringify(state, null, 2)}\n\`\`\`\n\n` +
@@ -113,14 +132,20 @@ export async function runAgent(
   let reasoning = '';
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    // On the LAST tool round, force JSON output natively — eliminates the
+    // separate "coerce" call that was doubling our latency on every agent.
+    // Gemini honors responseMimeType only when tools are NOT in this call.
+    const isLastRound = round === MAX_TOOL_ROUNDS - 1;
+    const hasToolsThisCall = functionDeclarations.length > 0 && !isLastRound;
     const response = await withRetry(() =>
       client.models.generateContent({
         model,
         contents,
         config: {
           systemInstruction: { parts: [{ text: systemPrompt }] },
-          tools: functionDeclarations.length > 0 ? [{ functionDeclarations }] : undefined,
+          tools: hasToolsThisCall ? [{ functionDeclarations }] : undefined,
           temperature: 0.3,
+          responseMimeType: hasToolsThisCall ? undefined : 'application/json',
         },
       })
     );
@@ -188,8 +213,9 @@ export async function runAgent(
           contents,
           config: {
             systemInstruction: { parts: [{ text: systemPrompt }] },
-            // NO TOOLS in this call — force pure text output
+            // NO TOOLS in this call — force pure JSON output
             temperature: 0.1,
+            responseMimeType: 'application/json',
           },
         })
       );

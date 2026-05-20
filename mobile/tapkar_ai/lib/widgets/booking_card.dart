@@ -19,10 +19,17 @@ class _BookingCardState extends State<BookingCard> {
     final b = widget.booking;
     final hasId = b.bookingId != null;
     final hasFollowUps = b.followUps.isNotEmpty;
-    final notFailed = b.status != 'failed' &&
+    final isFailed = b.status == 'failed';
+    final notFailed = !isFailed &&
         b.status != 'needs_user_choice' &&
         b.status != 'conflict';
-    final confirmed = hasId && notFailed && (b.status == 'confirmed' || hasFollowUps);
+    final isRequested = b.status == 'requested' || b.status == 'matched';
+    final confirmed = hasId && notFailed && b.status == 'confirmed';
+    final accent = isFailed
+        ? Colors.redAccent
+        : isRequested
+            ? AppColors.followup
+            : AppColors.booking;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -30,13 +37,13 @@ class _BookingCardState extends State<BookingCard> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            AppColors.booking.withOpacity(0.18),
-            AppColors.intent.withOpacity(0.12),
+            accent.withOpacity(0.18),
+            (isRequested ? AppColors.violet : AppColors.intent).withOpacity(0.12),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        border: Border.all(color: AppColors.booking.withOpacity(0.5)),
+        border: Border.all(color: accent.withOpacity(0.5)),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -45,15 +52,35 @@ class _BookingCardState extends State<BookingCard> {
           // ─── Status row ─────────────────────────────────────────────────
           Row(
             children: [
-              Icon(
-                confirmed ? Icons.check_circle : Icons.pending,
-                color: AppColors.booking,
-                size: 18,
-              ),
+              if (isRequested)
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(accent),
+                  ),
+                )
+              else
+                Icon(
+                  isFailed
+                      ? Icons.error_outline
+                      : confirmed
+                          ? Icons.check_circle
+                          : Icons.pending,
+                  color: accent,
+                  size: 18,
+                ),
               const SizedBox(width: 6),
               Text(
-                confirmed ? 'BOOKING CONFIRMED' : 'BOOKING PENDING',
-                style: AppFonts.mono(size: 10, color: AppColors.booking).copyWith(
+                isFailed
+                    ? 'BOOKING FAILED'
+                    : isRequested
+                        ? 'WAITING FOR PROVIDER'
+                        : confirmed
+                            ? 'BOOKING CONFIRMED'
+                            : 'BOOKING PENDING',
+                style: AppFonts.mono(size: 10, color: accent).copyWith(
                   letterSpacing: 1.5,
                   fontWeight: FontWeight.w700,
                 ),
@@ -87,7 +114,32 @@ class _BookingCardState extends State<BookingCard> {
           ],
 
           // ─── Provider notification indicator ──────────────────────────
-          if (confirmed) ...[
+          if (isRequested) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.04),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: accent.withOpacity(0.25)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.hourglass_top, size: 12, color: accent),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      b.providerName != null
+                          ? '${b.providerName} ka jawab ka intezaar…'
+                          : 'Provider ka jawab ka intezaar…',
+                      style: AppFonts.base(size: 11, color: Colors.white.withOpacity(0.85)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else if (confirmed) ...[
             const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -99,12 +151,12 @@ class _BookingCardState extends State<BookingCard> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.send_outlined, size: 12, color: AppColors.intent),
+                  const Icon(Icons.check_circle_outline, size: 12, color: AppColors.intent),
                   const SizedBox(width: 6),
                   Text(
                     b.providerName != null
-                        ? '${b.providerName!.split(' ').first} has been notified'
-                        : 'Provider has been notified',
+                        ? '${b.providerName!.split(' ').first} ne accept kiya'
+                        : 'Provider accepted',
                     style: AppFonts.base(size: 11, color: Colors.white70),
                   ),
                 ],

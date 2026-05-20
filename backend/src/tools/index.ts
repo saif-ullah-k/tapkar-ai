@@ -63,8 +63,16 @@ function haversineKm(a: LatLng, b: LatLng): number {
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+// IMPORTANT: ISO strings like "2026-05-21T08:00:00+05:00" carry a +05:00
+// offset (Asia/Karachi). We MUST compare against the local hour as written,
+// NOT the server's UTC time — Cloud Run runs in UTC so naive Date.getHours()
+// would read 03:00 and break every availability check.
 function dayKey(iso: string): keyof Provider['availability'] {
-  const d = new Date(iso).getUTCDay(); // 0=Sun..6=Sat
+  // Parse the YYYY-MM-DD prefix literally so the result is offset-independent.
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return 'monday';
+  const utc = new Date(Date.UTC(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10)));
+  const d = utc.getUTCDay(); // 0=Sun..6=Sat
   return (['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const)[
     d
   ];
@@ -74,12 +82,16 @@ function timeWithinRange(iso: string, range: string): boolean {
   const [start, end] = range.split('-');
   const [sh, sm] = start.split(':').map(Number);
   const [eh, em] = end.split(':').map(Number);
-  const d = new Date(iso);
-  const mins = d.getHours() * 60 + d.getMinutes();
+  // Pull the HH:MM directly from the ISO string — they're already in the
+  // request timezone (e.g. +05:00 for Karachi), which is what the
+  // provider's `availability` map is keyed by.
+  const tm = iso.match(/T(\d{2}):(\d{2})/);
+  if (!tm) return false;
+  const mins = parseInt(tm[1], 10) * 60 + parseInt(tm[2], 10);
   return mins >= sh * 60 + sm && mins <= eh * 60 + em;
 }
 
-function isAvailable(provider: Provider, atIso: string): boolean {
+export function isAvailable(provider: Provider, atIso: string): boolean {
   const ranges = provider.availability[dayKey(atIso)] ?? [];
   return ranges.some((r) => timeWithinRange(atIso, r));
 }
@@ -104,14 +116,57 @@ async function impl_detect_language(args: { text: string }): Promise<{ language:
 
 async function impl_geocode(args: { text: string }): Promise<Location | null> {
   const tax = loadTaxonomy();
-  const t = (args.text || '').toLowerCase();
-  // Pakistani neighborhood lookup — static map from taxonomy
+  const t = (args.text || '').toLowerCase().trim();
+  if (!t) return null;
+
+  // Tokenize the user's text: keep tokens >= 3 chars so we don't match noise
+  // like "men" (which is "in" in Roman Urdu) or "me", "ka", etc.
+  const userTokens = t.split(/[\s,.-]+/).filter((w) => w.length >= 3);
+
+  // Pass 1: exact / substring match either direction
   for (const n of tax.neighborhoods_karachi) {
-    if (t.includes(n.name.toLowerCase()) || (n.ur && args.text?.includes(n.ur))) {
+    const nameLc = n.name.toLowerCase();
+    if (t.includes(nameLc) || nameLc.includes(t)) {
+      return { lat: n.lat, lng: n.lng, label: n.name, neighborhood: n.name };
+    }
+    if (n.ur && args.text?.includes(n.ur)) {
       return { lat: n.lat, lng: n.lng, label: n.name, neighborhood: n.name };
     }
   }
-  // No fallback to real geocoding in Day 1 (no GCP key required)
+
+  // Pass 2: token-level match — "gulshan" matches "Gulshan-e-Iqbal",
+  // "dha" matches "DHA Phase 5", "defence" matches "Defence View", etc.
+  for (const n of tax.neighborhoods_karachi) {
+    const nameTokens = n.name.toLowerCase().split(/[\s,.-]+/).filter((w) => w.length >= 3);
+    const overlap = userTokens.some((ut) =>
+      nameTokens.some((nt) => nt === ut || nt.startsWith(ut) || ut.startsWith(nt))
+    );
+    if (overlap) {
+      return { lat: n.lat, lng: n.lng, label: n.name, neighborhood: n.name };
+    }
+  }
+
+  // Pass 3: known aliases for areas users phrase loosely
+  const aliases: Record<string, string> = {
+    defence: 'DHA Phase 5',
+    'defence view': 'Defence View',
+    dha: 'DHA Phase 5',
+    gulshan: 'Gulshan-e-Iqbal',
+    'gulshan iqbal': 'Gulshan-e-Iqbal',
+    'north nazim': 'North Nazimabad',
+    'federal b': 'Federal B Area',
+    pechs: 'PECHS',
+    nazim: 'Nazimabad',
+    johar: 'Johar',
+    'tariq road': 'Tariq Road',
+  };
+  for (const [alias, target] of Object.entries(aliases)) {
+    if (t.includes(alias)) {
+      const n = tax.neighborhoods_karachi.find((x: any) => x.name === target);
+      if (n) return { lat: n.lat, lng: n.lng, label: n.name, neighborhood: n.name };
+    }
+  }
+
   return null;
 }
 
@@ -153,7 +208,12 @@ async function impl_search_providers(args: {
 }): Promise<ProviderCandidate[]> {
   const providers = loadProviders();
   return providers
-    .filter((p) => !args.category_id || p.category === args.category_id)
+    .filter((p) => {
+      if (!args.category_id) return true;
+      // Match primary category OR any additional category (multi-service provider).
+      if (p.category === args.category_id) return true;
+      return (p.additional_categories ?? []).includes(args.category_id);
+    })
     .filter((p) => {
       if (!args.specializations || args.specializations.length === 0) return true;
       return args.specializations.some((s) => p.specializations.includes(s));
@@ -167,15 +227,154 @@ async function impl_search_providers(args: {
     .sort((a, b) => (a.distance_km ?? 0) - (b.distance_km ?? 0));
 }
 
-async function impl_places_nearby_search(_args: any): Promise<ProviderCandidate[]> {
+async function impl_places_nearby_search(args: {
+  location: { lat: number; lng: number };
+  type?: string;
+  keyword?: string;
+  radius?: number;
+}): Promise<ProviderCandidate[]> {
   if (!config.features.useRealPlaces) return [];
-  // Real implementation gated until Day 2+
-  return [];
+  if (!config.gcp.mapsApiKey) {
+    console.warn('[places] USE_REAL_PLACES=true but GOOGLE_MAPS_API_KEY is missing');
+    return [];
+  }
+  const radius = Math.min(args.radius ?? 5000, 50_000);
+  const body: any = {
+    locationRestriction: {
+      circle: {
+        center: { latitude: args.location.lat, longitude: args.location.lng },
+        radius,
+      },
+    },
+    maxResultCount: 8,
+    languageCode: 'en',
+  };
+  if (args.type) body.includedTypes = [args.type];
+  return callPlacesApi('places:searchNearby', body, args.location, args.keyword);
 }
 
-async function impl_places_text_search(_args: any): Promise<ProviderCandidate[]> {
+async function impl_places_text_search(args: {
+  query: string;
+  location?: { lat: number; lng: number };
+  radius?: number;
+}): Promise<ProviderCandidate[]> {
   if (!config.features.useRealPlaces) return [];
-  return [];
+  if (!config.gcp.mapsApiKey) {
+    console.warn('[places] USE_REAL_PLACES=true but GOOGLE_MAPS_API_KEY is missing');
+    return [];
+  }
+  const body: any = {
+    textQuery: args.query,
+    maxResultCount: 8,
+    languageCode: 'en',
+  };
+  if (args.location) {
+    body.locationBias = {
+      circle: {
+        center: { latitude: args.location.lat, longitude: args.location.lng },
+        radius: Math.min(args.radius ?? 10_000, 50_000),
+      },
+    };
+  }
+  return callPlacesApi('places:searchText', body, args.location, args.query);
+}
+
+/** Shared HTTP call to Places API v1, mapping the response into ProviderCandidate. */
+async function callPlacesApi(
+  endpoint: 'places:searchNearby' | 'places:searchText',
+  body: Record<string, unknown>,
+  origin: { lat: number; lng: number } | undefined,
+  keyword?: string
+): Promise<ProviderCandidate[]> {
+  const url = `https://places.googleapis.com/v1/${endpoint}`;
+  const fieldMask = [
+    'places.id',
+    'places.displayName',
+    'places.formattedAddress',
+    'places.location',
+    'places.rating',
+    'places.userRatingCount',
+    'places.types',
+    'places.nationalPhoneNumber',
+    'places.internationalPhoneNumber',
+    'places.priceLevel',
+    'places.currentOpeningHours.openNow',
+  ].join(',');
+
+  const t0 = Date.now();
+  let resp: Response;
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': config.gcp.mapsApiKey,
+        'X-Goog-FieldMask': fieldMask,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e: any) {
+    console.warn(`[places] ${endpoint} fetch failed:`, e?.message ?? e);
+    return [];
+  }
+  const ms = Date.now() - t0;
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    console.warn(`[places] ${endpoint} HTTP ${resp.status} in ${ms}ms: ${text.slice(0, 200)}`);
+    return [];
+  }
+  const json = (await resp.json().catch(() => ({}))) as { places?: any[] };
+  const places = json.places ?? [];
+  console.log(`[places] ${endpoint} returned ${places.length} in ${ms}ms`);
+
+  return places.map((p, i) => placeToCandidate(p, i, origin, keyword));
+}
+
+function placeToCandidate(
+  place: any,
+  index: number,
+  origin: { lat: number; lng: number } | undefined,
+  keyword?: string
+): ProviderCandidate {
+  const lat = place.location?.latitude ?? 0;
+  const lng = place.location?.longitude ?? 0;
+  const distance_km = origin
+    ? haversineKm({ lat: origin.lat, lng: origin.lng }, { lat, lng })
+    : undefined;
+
+  // Map Places priceLevel -> rough PKR range (very approximate).
+  const priceMap: Record<string, [number, number]> = {
+    PRICE_LEVEL_INEXPENSIVE: [500, 2000],
+    PRICE_LEVEL_MODERATE: [2000, 6000],
+    PRICE_LEVEL_EXPENSIVE: [6000, 15000],
+    PRICE_LEVEL_VERY_EXPENSIVE: [15000, 50000],
+  };
+  const price = priceMap[place.priceLevel as string] ?? [1500, 6000];
+
+  return {
+    id: `places_${place.id ?? `unknown_${index}`}`,
+    name: place.displayName?.text ?? 'Unknown',
+    category: (keyword ?? 'general').toLowerCase().replace(/\s+/g, '_'),
+    specializations: place.types ?? [],
+    neighborhood: (place.formattedAddress as string | undefined)?.split(',')?.[1]?.trim() ?? '',
+    lat,
+    lng,
+    service_radius_km: 15,
+    rating: place.rating ?? 0,
+    review_count: place.userRatingCount ?? 0,
+    jobs_completed: 0,
+    years_experience: 0,
+    languages: ['ur', 'en'] as any,
+    price_range_pkr: price,
+    availability: {} as any,
+    phone: place.nationalPhoneNumber ?? place.internationalPhoneNumber ?? '',
+    verified: false,
+    tags: ['from_places_api'],
+    distance_km,
+    availability_at_request: place.currentOpeningHours?.openNow ? 'available' : undefined,
+    source: 'places_api',
+  };
 }
 
 async function impl_get_availability(args: {
@@ -209,10 +408,18 @@ async function impl_filter_by_constraints(args: {
   verified_only?: boolean;
   female_only?: boolean;
 }): Promise<ProviderCandidate[]> {
-  // NB: gender is not modelled in seed data; the female_only filter is a no-op for Day 1
-  // and reported as "passed_through" so the agent knows. No business decision here —
-  // exact-match filtering only.
-  return args.providers.filter((p) => !args.verified_only || p.verified);
+  // Look up gender from the full provider catalogue — candidates may be
+  // partial projections that don't carry it.
+  const catalog = loadProviders();
+  return args.providers.filter((p) => {
+    if (args.verified_only && !p.verified) return false;
+    if (args.female_only) {
+      const full = catalog.find((c) => c.id === p.id);
+      const g = (full?.gender ?? (p as any).gender ?? '').toLowerCase();
+      if (g !== 'female') return false;
+    }
+    return true;
+  });
 }
 
 async function impl_get_reviews(args: {
@@ -250,23 +457,28 @@ async function impl_create_booking(args: {
   notes?: string;
 }): Promise<{ booking_id: string; status: BookingStatus }> {
   const id = `bk_${Math.floor(Math.random() * 90000) + 10000}`;
+  // New marketplace flow: a fresh booking is a REQUEST awaiting the provider's
+  // explicit accept. Status flips to "confirmed" only when the provider taps
+  // Accept in their Jobs tab. Prevents the "false confirmed" UX where the
+  // customer sees a green check before the provider has actually agreed.
+  // Default optional fields to safe non-undefined values so Firestore writes
+  // never reject (Firestore rejects undefined; null is OK).
   const booking: Booking = {
     id,
     user_id: args.user_id,
     provider_id: args.provider_id,
     service_category_id: args.service_category_id,
-    specializations: args.specializations,
+    specializations: args.specializations ?? [],
     time_iso: args.time_iso,
     location: args.location,
-    status: 'confirmed',
+    status: 'requested',
     language: args.language,
     estimated_price_pkr: args.estimated_price_pkr,
-    notes: args.notes,
+    notes: args.notes ?? '',
     created_at: new Date().toISOString(),
-    confirmed_at: new Date().toISOString(),
   };
   await putBooking(booking);
-  return { booking_id: id, status: 'confirmed' };
+  return { booking_id: id, status: 'requested' };
 }
 
 async function impl_get_booking(args: { booking_id: string }): Promise<Booking | null> {
@@ -302,10 +514,14 @@ async function impl_send_notification(args: {
   channel?: 'in_app' | 'sms';
 }): Promise<{ message_id: string }> {
   const message_id = `m_${randomUUID().slice(0, 8)}`;
+  // Derive user_id from the booking so the Inbox tab can filter properly
+  const booking = await getBookingFromStore(args.booking_id);
   await putInboxMessage({
     message_id,
     to: args.to,
     booking_id: args.booking_id,
+    user_id: booking?.user_id ?? null,
+    provider_id: booking?.provider_id ?? null,
     message: args.message,
     language: args.language,
     channel: args.channel ?? 'in_app',

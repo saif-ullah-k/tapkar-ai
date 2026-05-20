@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@google-cloud/firestore": "^7.0.0",
+    "@google-cloud/text-to-speech": "^6.4.1",
     "@google/genai": "^1.0.0",
     "@googlemaps/google-maps-services-js": "^3.4.0",
     "dotenv": "^16.4.0",
