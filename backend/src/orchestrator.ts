@@ -195,6 +195,10 @@ export async function* runPipeline(input: RunInput): AsyncGenerator<StreamEvent>
       // first deterministic-discovery candidate. Discovery already filters
       // by category + radius + availability and orders by distance, so
       // candidates[0] is a sensible default. Bypasses the ranking LLM call.
+      // Also stamp `user_locked_provider_id` into state so the booking
+      // agent treats this as a confirmed selection (otherwise it falls
+      // through to its needs_user_choice branch and asks "which one?",
+      // hanging the pipeline for voice).
       if (input.voice_mode && agentName === 'booking' && !state.ranking) {
         const candidates = ((state.discovery as any)?.candidates ?? []) as any[];
         if (candidates.length > 0) {
@@ -208,6 +212,7 @@ export async function* runPipeline(input: RunInput): AsyncGenerator<StreamEvent>
             }],
             recommendation_mode: 'voice_auto_pick',
           };
+          state.user_locked_provider_id = pick.id;
         }
       }
 
