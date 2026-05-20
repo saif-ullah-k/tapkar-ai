@@ -726,14 +726,33 @@ class AppState extends ChangeNotifier {
   }
 
   /// Called by the Live voice screen when the Gemini Live bridge streams an
-  /// agent_step event from the wrapped 5-agent orchestrator. Mirrors the
-  /// SSE _handleEvent path so the trace panel + booking card update even
-  /// though the user is in voice-mode and not the chat screen.
+  /// agent_step event from the wrapped 5-agent orchestrator. Updates the
+  /// trace panel + booking card ONLY — does NOT add to chat messages or
+  /// trigger chat TTS. Live is already narrating the result over its own
+  /// audio channel; running chat TTS in parallel causes double-voice.
   void handleVoiceLiveStep(Map<String, dynamic> sseEvent) {
     final ev = sseEvent['event'] as String?;
     final data = sseEvent['data'] as Map<String, dynamic>? ?? const {};
     if (ev == null) return;
-    _handleEvent(SseEvent(event: ev, data: data));
+    switch (ev) {
+      case 'run_started':
+        currentRunId = data['run_id'] as String?;
+        break;
+      case 'step':
+        // Trace panel + booking-card extraction. No chat-message side
+        // effects, no TTS.
+        try {
+          traceSteps.add(TraceStep.fromJson(data));
+          _maybeExtractBookingFromStep(data);
+          _maybeCacheIntent(data);
+        } catch (_) {/* ignore malformed */}
+        break;
+      case 'run_complete':
+        currentRunId = data['run_id'] as String? ?? currentRunId;
+        break;
+      // user_message intentionally skipped — Live is already speaking
+      // the equivalent over its own audio path.
+    }
     notifyListeners();
   }
 
