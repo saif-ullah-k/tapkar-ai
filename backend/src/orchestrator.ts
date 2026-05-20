@@ -29,6 +29,10 @@ export interface RunInput {
   /** Echo of intent from the previous /run. When provided in locked mode the
    *  orchestrator skips the intent agent entirely — saves ~10 s per booking. */
   prior_intent?: any;
+  /** Voice mode: skip the ranking agent and auto-pick the top deterministic-
+   *  discovery candidate. ~15 s faster than the full pipeline. Used by the
+   *  Gemini Live bridge where there's no picker UI to render anyway. */
+  voice_mode?: boolean;
   /** User's gender. Bot speaks with matching grammatical gender in
    *  Urdu / Roman Urdu. */
   user_gender?: string;
@@ -156,9 +160,16 @@ export async function* runPipeline(input: RunInput): AsyncGenerator<StreamEvent>
   // search_providers is a pure category+distance filter, no LLM judgment
   // needed. Skipping the discovery agent saves ~6-10s per pipeline run
   // and removes the most common hallucination source.
+  // Voice mode: drop ranking from the pipeline. Discovery runs
+  // deterministically and we'll synthesize a ranking output that picks
+  // the first candidate so the booking agent gets a single provider to
+  // book. Cuts ~15 s off the round-trip on a path where the user can't
+  // see a picker anyway.
   const activePipeline: AgentName[] = isLocked
     ? (haveCachedIntent ? ['booking'] : ['intent', 'booking'])
-    : ['intent', 'ranking', 'booking'];
+    : input.voice_mode
+      ? ['intent', 'booking']
+      : ['intent', 'ranking', 'booking'];
 
   try {
     for (const agentName of activePipeline) {
@@ -178,6 +189,26 @@ export async function* runPipeline(input: RunInput): AsyncGenerator<StreamEvent>
           }],
           recommendation_mode: 'user_selected',
         };
+      }
+
+      // Voice-mode fast path: synthesize a ranking output by picking the
+      // first deterministic-discovery candidate. Discovery already filters
+      // by category + radius + availability and orders by distance, so
+      // candidates[0] is a sensible default. Bypasses the ranking LLM call.
+      if (input.voice_mode && agentName === 'booking' && !state.ranking) {
+        const candidates = ((state.discovery as any)?.candidates ?? []) as any[];
+        if (candidates.length > 0) {
+          const pick = candidates[0];
+          state.ranking = {
+            top_3: [{
+              provider_id: pick.id,
+              rank: 1,
+              score: 1.0,
+              reasoning: `Voice mode: auto-picked nearest available ${pick.category} (${pick.name}, ${pick.neighborhood}, ${pick.rating}★).`,
+            }],
+            recommendation_mode: 'voice_auto_pick',
+          };
+        }
       }
 
       const result = await runAgent(agentName, compactState(state, agentName), {
