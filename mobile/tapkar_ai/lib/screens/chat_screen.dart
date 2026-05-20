@@ -300,7 +300,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       }
                       return ChatBubble(message: s.messages[i]);
                     }
-                    return BookingCard(booking: s.lastBooking!);
+                    return BookingCard(booking: s.lastBooking!, state: widget.state);
                   },
                 ),
         ),

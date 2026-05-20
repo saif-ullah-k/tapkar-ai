@@ -6,6 +6,7 @@ import '../services/provider_api.dart';
 import '../state/auth_state.dart';
 import '../theme.dart';
 import '../utils/time.dart';
+import 'booking_chat_screen.dart';
 import 'provider_chat_setup_screen.dart';
 import 'provider_onboarding_screen.dart';
 import 'voice_live_screen.dart';
@@ -1246,6 +1247,30 @@ class _BookingCard extends StatelessWidget {
           ],
           const SizedBox(height: 10),
           _actionRow(status, id),
+          // Chat with the customer about this specific booking.
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => BookingChatScreen(
+                    bookingId: id,
+                    myRole: 'provider',
+                    mySenderId: booking['provider_id'] as String? ?? '',
+                    counterpartName: 'Customer',
+                  ),
+                ));
+              },
+              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+              label: const Text('Chat with customer'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.violet,
+                side: BorderSide(color: AppColors.violet.withOpacity(0.5)),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+              ),
+            ),
+          ),
         ],
       ),
     );

@@ -5,6 +5,7 @@ import '../services/user_api.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../utils/time.dart';
+import 'booking_chat_screen.dart';
 
 /// Customer's bookings — upcoming + past, with status pills.
 class BookingsScreen extends StatefulWidget {
@@ -116,12 +117,12 @@ class _BookingsScreenState extends State<BookingsScreen> {
         children: [
           if (up.isNotEmpty) ...[
             _sectionLabel('Upcoming · ${up.length}'),
-            ...up.map((b) => _BookingCard(booking: b)),
+            ...up.map((b) => _BookingCard(booking: b, state: widget.state)),
             const SizedBox(height: 8),
           ],
           if (past.isNotEmpty) ...[
             _sectionLabel('Past · ${past.length}'),
-            ...past.map((b) => _BookingCard(booking: b)),
+            ...past.map((b) => _BookingCard(booking: b, state: widget.state)),
           ],
           const SizedBox(height: 24),
         ],
@@ -190,7 +191,8 @@ class _BookingsScreenState extends State<BookingsScreen> {
 
 class _BookingCard extends StatelessWidget {
   final Map<String, dynamic> booking;
-  const _BookingCard({required this.booking});
+  final AppState state;
+  const _BookingCard({required this.booking, required this.state});
 
   @override
   Widget build(BuildContext context) {
@@ -265,6 +267,33 @@ class _BookingCard extends StatelessWidget {
                 Text('PKR ${price[0]}–${price[1]}',
                     style: AppFonts.mono(size: 11, color: Colors.white60)),
             ]),
+          ],
+          // Chat-with-provider entry. Hidden if we don't have a real
+          // provider name (mid-booking-failure cases).
+          if (id.isNotEmpty && providerName != null && providerName.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => BookingChatScreen(
+                      bookingId: id,
+                      myRole: 'user',
+                      mySenderId: state.userId,
+                      counterpartName: providerName,
+                    ),
+                  ));
+                },
+                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                label: Text('Chat with ${providerName.split(' ').first}'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.violet,
+                  side: BorderSide(color: AppColors.violet.withOpacity(0.5)),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+              ),
+            ),
           ],
         ],
       ),

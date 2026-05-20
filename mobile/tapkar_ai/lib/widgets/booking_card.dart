@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import '../models/types.dart';
+import '../screens/booking_chat_screen.dart';
+import '../state/app_state.dart';
 import '../theme.dart';
 import '../utils/time.dart';
 
 class BookingCard extends StatefulWidget {
   final BookingResult booking;
-  const BookingCard({super.key, required this.booking});
+  /// Optional — passed from the customer Bookings tab so the "Chat
+  /// with provider" button knows who's sending. The chat screen needs
+  /// the Firebase UID to identify the sender to the backend.
+  final AppState? state;
+  const BookingCard({super.key, required this.booking, this.state});
 
   @override
   State<BookingCard> createState() => _BookingCardState();
@@ -160,6 +166,33 @@ class _BookingCardState extends State<BookingCard> {
                     style: AppFonts.base(size: 11, color: Colors.white70),
                   ),
                 ],
+              ),
+            ),
+          ],
+
+          // ─── Chat with provider ────────────────────────────────────────
+          if (hasId && widget.state != null && b.providerName != null) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => BookingChatScreen(
+                      bookingId: b.bookingId!,
+                      myRole: 'user',
+                      mySenderId: widget.state!.userId,
+                      counterpartName: b.providerName,
+                    ),
+                  ));
+                },
+                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                label: Text('Chat with ${b.providerName!.split(' ').first}'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.violet,
+                  side: BorderSide(color: AppColors.violet.withOpacity(0.5)),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
               ),
             ),
           ],

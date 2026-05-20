@@ -734,6 +734,69 @@ app.get('/providers', (_req, res) => {
   res.json({ providers, total: providers.length });
 });
 
+/** Per-booking messages — direct chat between the customer and the
+ *  provider tied to a specific booking. Stored in Firestore under
+ *  `booking_messages/{bookingId}/messages/{msgId}` so both sides can
+ *  poll cheaply. */
+app.get('/bookings/:id/messages', async (req, res) => {
+  try {
+    const { Firestore } = await import('@google-cloud/firestore');
+    const fs = new Firestore({ projectId: config.gcp.projectId });
+    const snap = await fs
+      .collection(`booking_messages/${req.params.id}/messages`)
+      .orderBy('ts', 'asc')
+      .limit(200)
+      .get();
+    res.json({
+      messages: snap.docs.map((d) => ({ id: d.id, ...d.data() })),
+    });
+  } catch (e: any) {
+    console.warn('[messages] read failed:', e?.message ?? e);
+    res.json({ messages: [] });
+  }
+});
+
+const PostBookingMessageSchema = z.object({
+  // 'user' or 'provider' — the side that's sending. Avoids us trying
+  // to look up auth roles in the request.
+  from: z.enum(['user', 'provider']),
+  sender_id: z.string().min(1),
+  text: z.string().min(1).max(1000),
+});
+app.post('/bookings/:id/messages', async (req, res) => {
+  const parsed = PostBookingMessageSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
+  }
+  const booking = await getBookingFromStore(req.params.id);
+  if (!booking) return res.status(404).json({ error: 'booking_not_found' });
+  // Cheap authorization: sender must be the customer or the provider on
+  // this booking. No JWT, just an id match.
+  const isOwner =
+    (parsed.data.from === 'user' && parsed.data.sender_id === booking.user_id) ||
+    (parsed.data.from === 'provider' && parsed.data.sender_id === booking.provider_id);
+  if (!isOwner) {
+    return res.status(403).json({ error: 'not_a_party_to_this_booking' });
+  }
+  try {
+    const { Firestore } = await import('@google-cloud/firestore');
+    const fs = new Firestore({ projectId: config.gcp.projectId });
+    const msg = {
+      from: parsed.data.from,
+      sender_id: parsed.data.sender_id,
+      text: parsed.data.text.trim(),
+      ts: new Date().toISOString(),
+    };
+    const ref = await fs
+      .collection(`booking_messages/${req.params.id}/messages`)
+      .add(msg);
+    res.json({ ok: true, id: ref.id, message: msg });
+  } catch (e: any) {
+    console.error('[messages] write failed:', e?.message ?? e);
+    res.status(500).json({ error: 'persist_failed' });
+  }
+});
+
 /** Single booking lookup — used by the customer chat to poll for the status
  *  transition from "requested" → "confirmed" after the provider accepts. */
 app.get('/bookings/:id', async (req, res) => {
