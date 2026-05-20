@@ -32,6 +32,11 @@ A single agentic system that:
 
 All of this driven by reasoning agents — not hardcoded if/else logic.
 
+There are two ways to talk to TapKar AI:
+
+- **Chat mode** — type, speak (push-to-talk Urdu STT), or attach photos. Trace panel shows each agent step live as an SSE stream.
+- **Voice mode** — Gemini Live full-duplex audio. Tap the orb, speak naturally; the Live model interprets the request and calls our 5-agent pipeline as a tool. Booking outcome is narrated back in the same language. The trace panel still updates in the background.
+
 ## Architecture (at a glance)
 
 ```
@@ -84,7 +89,8 @@ This is enforced as a project principle, not just a coding style. See [`docs/arc
 | LLM | **Gemini 3.1 Pro** (default) + **Claude Sonnet 4.6** (heavy reasoning) | Both available natively inside Antigravity's model picker |
 | Data | **Firestore** + mock JSON | Free tier for hackathon · trace logs written here |
 | Maps | **Google Places API + Geocoding** | Real provider discovery with mock fallback |
-| Voice | **Cloud Speech-to-Text** (Urdu) | Native mobile STT better than browser API |
+| Voice (chat) | **Cloud Speech-to-Text** (Urdu) | Native mobile STT better than browser API |
+| Voice (live) | **Gemini Live (native audio)** over WebSocket | Real-time voice mode — model calls our 5-agent pipeline as a single tool, streams agent traces + audio back to the client |
 
 ## Repo layout
 

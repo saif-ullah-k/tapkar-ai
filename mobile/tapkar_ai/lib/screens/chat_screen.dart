@@ -10,6 +10,7 @@ import '../widgets/chat_bubble.dart';
 import '../widgets/picker_card.dart';
 import '../widgets/trace_panel.dart';
 import '../widgets/voice_input_button.dart';
+import 'voice_live_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final AppState state;
@@ -208,6 +209,16 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
         actions: [
+          // Gemini Live voice mode — full-screen real-time voice session.
+          IconButton(
+            icon: const Icon(Icons.graphic_eq, size: 20, color: AppColors.violet),
+            tooltip: 'Voice mode (Gemini Live)',
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => VoiceLiveScreen(state: widget.state),
+              ));
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.edit_square, size: 18, color: Colors.white60),
             tooltip: 'New chat',

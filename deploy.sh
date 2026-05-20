@@ -99,7 +99,7 @@ gcloud run deploy "$SERVICE" \
   --concurrency=10 \
   --max-instances=1 \
   --port=8080 \
-  --set-env-vars="USE_VERTEX_AI=true,GCP_PROJECT=${PROJECT},GCP_LOCATION=${REGION},GEMINI_MODEL=gemini-2.5-flash-lite,GEMINI_FLASH_MODEL=gemini-2.5-flash-lite,MODEL_INTENT=gemini-2.5-flash-lite,MODEL_BOOKING=gemini-2.5-flash,MODEL_DISCOVERY=gemini-2.5-flash-lite,MODEL_RANKING=gemini-2.5-flash-lite,MODEL_FOLLOWUP=gemini-2.5-flash-lite,USE_REAL_PLACES=true,GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-},USE_FIRESTORE=true,DEBUG_TRACES=true,RUN_TIMEOUT_MS=480000,AGENT_TIMEOUT_MS=120000,MAX_STEPS=8"
+  --set-env-vars="^|^USE_VERTEX_AI=true|GCP_PROJECT=${PROJECT}|GCP_LOCATION=${REGION}|GEMINI_MODEL=gemini-2.5-flash-lite|GEMINI_FLASH_MODEL=gemini-2.5-flash-lite|MODEL_INTENT=gemini-2.5-flash-lite|MODEL_BOOKING=gemini-2.5-flash|MODEL_DISCOVERY=gemini-2.5-flash-lite|MODEL_RANKING=gemini-2.5-flash-lite|MODEL_FOLLOWUP=gemini-2.5-flash-lite|USE_REAL_PLACES=true|GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}|GEMINI_API_KEY=${GEMINI_API_KEY:-}|USE_FIRESTORE=true|DEBUG_TRACES=true|RUN_TIMEOUT_MS=480000|AGENT_TIMEOUT_MS=120000|MAX_STEPS=8"
 
 # ─── 6. Smoke test ───────────────────────────────────────────────────────────
 URL=$(gcloud run services describe "$SERVICE" \

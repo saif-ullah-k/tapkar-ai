@@ -741,9 +741,21 @@ validateConfig();
 hydrateProvidersFromFirestore().catch((e) =>
   console.warn('[boot] hydrateProvidersFromFirestore failed:', e?.message ?? e)
 );
-app.listen(config.port, () => {
+const httpServer = app.listen(config.port, () => {
   console.log(`[tapkar-ai] listening on http://localhost:${config.port}`);
   console.log(`[tapkar-ai] POST /run    — start a pipeline (SSE stream)`);
   console.log(`[tapkar-ai] GET  /traces/:run_id — fetch a trace`);
+  console.log(`[tapkar-ai] WS   /voice/live — Gemini Live audio bridge`);
   console.log(`[tapkar-ai] GET  /healthz`);
 });
+
+// Attach the Gemini Live voice WebSocket bridge to the HTTP server so we
+// can upgrade /voice/live connections.
+(async () => {
+  try {
+    const { attachLiveVoice } = await import('./voice-live.js');
+    attachLiveVoice(httpServer);
+  } catch (e: any) {
+    console.warn('[boot] voice-live attach failed (non-fatal):', e?.message ?? e);
+  }
+})();

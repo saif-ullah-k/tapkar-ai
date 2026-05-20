@@ -725,6 +725,18 @@ class AppState extends ChangeNotifier {
     return pool[(n - 1).clamp(0, pool.length - 1)];
   }
 
+  /// Called by the Live voice screen when the Gemini Live bridge streams an
+  /// agent_step event from the wrapped 5-agent orchestrator. Mirrors the
+  /// SSE _handleEvent path so the trace panel + booking card update even
+  /// though the user is in voice-mode and not the chat screen.
+  void handleVoiceLiveStep(Map<String, dynamic> sseEvent) {
+    final ev = sseEvent['event'] as String?;
+    final data = sseEvent['data'] as Map<String, dynamic>? ?? const {};
+    if (ev == null) return;
+    _handleEvent(SseEvent(event: ev, data: data));
+    notifyListeners();
+  }
+
   // ─── Persistence ─────────────────────────────────────────────────────────
   // Chat messages survive app restarts so a stray swipe-away doesn't wipe
   // the conversation. We persist on every notifyListeners (debounced) and
