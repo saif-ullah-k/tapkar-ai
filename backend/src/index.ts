@@ -292,9 +292,30 @@ AVAILABILITY RULES (READ CAREFULLY — customers complain when this is wrong):
 
 7. NEVER assign the same single range to every day automatically as a default. If the user says only "10 to 2" with no day reference and no prior context, ASK which days that applies to.
 
+DATE-SPECIFIC EXCEPTIONS (CRITICAL — yeh feature important hai):
+
+The provider has a second field \`availability_overrides\` (array). USE THIS — not the weekly map — whenever the user mentions a SPECIFIC DATE or RELATIVE DATE ("kal", "parsoo", "Friday 25th", "next Monday", "tomorrow", "today").
+
+Shape: \`availability_overrides: [{ date: "YYYY-MM-DD", hours: ["HH:MM-HH:MM", ...], note?: "string" }]\`
+
+Resolve relative dates against today:
+- "aaj" / "today" → date: ${todayPK}
+- "kal" / "tomorrow" → date: ${dayNamesPK[new Date(Date.UTC(py, pm - 1, pd + 1)).getUTCDay()]} ${(() => { const d = new Date(Date.UTC(py, pm - 1, pd + 1)); return d.toISOString().slice(0, 10); })()}
+- "parsoo" / "day after tomorrow" → date: ${(() => { const d = new Date(Date.UTC(py, pm - 1, pd + 2)); return d.toISOString().slice(0, 10); })()}
+
+Examples:
+- "Kal 10 se 12 nahi mein" → add override { date: "<kal>", hours: ["00:00-10:00", "12:00-23:59"], note: "10-12 nahi" } (open all day except 10-12).
+- "Kal sara din chhutti" / "kal off" → { date: "<kal>", hours: [], note: "off" }.
+- "Aaj 5 baje ke baad available" → { date: "<aaj>", hours: ["17:00-23:59"] }.
+- User cancels an existing override: remove the entry for that date.
+
+NEVER fold a date-specific exception into the WEEKLY \`availability\` map — that would make the change permanent. Always use \`availability_overrides\` for one-off dates.
+
+After applying, your reply should confirm using the actual date you wrote: "Done — kal (${(() => { const d = new Date(Date.UTC(py, pm - 1, pd + 1)); return d.toISOString().slice(0, 10); })()}) ko 10-12 nahi available, baki sab time available rahega." Match the user's language.
+
 Output STRICT JSON only (no commentary, no markdown fences):
 {
-  "draft": { ...full draft after merging the user's input... },
+  "draft": { ...full draft after merging the user's input — INCLUDE availability_overrides if changed... },
   "reply": "<one short conversational sentence in ${langName}>",
   "complete": <boolean — see MODE rules above>,
   "missing": [<list of required-field names still missing>]
@@ -519,6 +540,16 @@ const RegisterProviderSchema = z.object({
     saturday: HoursSchema.optional().default([]),
     sunday: HoursSchema.optional().default([]),
   }).optional(),
+  // Date-specific overrides to the weekly schedule. Each entry replaces
+  // the weekly hours for that one date — e.g. "kal 10-12 nahi mein"
+  // becomes { date: "2026-05-21", hours: ["00:00-10:00","12:00-23:59"] }
+  // (open everything EXCEPT 10-12 that day). Empty hours = closed all
+  // day on that date.
+  availability_overrides: z.array(z.object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    hours: z.array(z.string()).default([]),
+    note: z.string().optional(),
+  })).optional().default([]),
   phone: z.string().optional().default(''),
   bio: z.string().optional().default(''),
   profile_image_url: z.string().optional().default(''),
@@ -557,6 +588,7 @@ app.post('/providers/register', async (req, res) => {
     languages: d.languages,
     price_range_pkr: d.price_range_pkr,
     availability: d.availability ?? {},
+    availability_overrides: d.availability_overrides ?? [],
     phone: d.phone,
     verified: false,
     tags: ['newly_registered'],
@@ -593,6 +625,13 @@ const UpdateProviderSchema = z.object({
     saturday: HoursSchema.optional(),
     sunday: HoursSchema.optional(),
   }).optional(),
+  // See RegisterProviderSchema — same shape. PATCH lets providers add,
+  // edit, or remove one-off date exceptions via the chat assistant.
+  availability_overrides: z.array(z.object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    hours: z.array(z.string()).default([]),
+    note: z.string().optional(),
+  })).optional(),
   phone: z.string().optional(),
   bio: z.string().optional(),
   profile_image_url: z.string().optional(),
@@ -634,6 +673,9 @@ app.patch('/providers/:provider_id', async (req, res) => {
     ...(parsed.data.price_range_pkr !== undefined && { price_range_pkr: parsed.data.price_range_pkr }),
     ...(parsed.data.availability !== undefined && {
       availability: { ...existing.availability, ...parsed.data.availability },
+    }),
+    ...(parsed.data.availability_overrides !== undefined && {
+      availability_overrides: parsed.data.availability_overrides,
     }),
     ...(parsed.data.phone !== undefined && { phone: parsed.data.phone }),
     ...(parsed.data.bio !== undefined && { bio: parsed.data.bio }),

@@ -92,6 +92,21 @@ function timeWithinRange(iso: string, range: string): boolean {
 }
 
 export function isAvailable(provider: Provider, atIso: string): boolean {
+  // Date-specific overrides take precedence over the weekly schedule.
+  // E.g. provider's normal Thursday hours are 09:00-18:00 but they
+  // added an override for 2026-05-21 with hours ["00:00-10:00",
+  // "12:00-23:59"] — that day they're closed 10-12, and ONLY the
+  // override applies (not stacked with weekly hours).
+  const overrides: any[] = (provider as any).availability_overrides ?? [];
+  if (overrides.length > 0) {
+    const dateStr = atIso.slice(0, 10);
+    const ov = overrides.find((o) => o?.date === dateStr);
+    if (ov) {
+      const ovHours: string[] = Array.isArray(ov.hours) ? ov.hours : [];
+      // Empty hours = explicitly closed for the whole day.
+      return ovHours.some((r) => timeWithinRange(atIso, r));
+    }
+  }
   const ranges = provider.availability[dayKey(atIso)] ?? [];
   return ranges.some((r) => timeWithinRange(atIso, r));
 }

@@ -18,6 +18,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { GoogleGenAI, Modality, Type, type Session } from '@google/genai';
 import { config } from './config.js';
 import { runPipeline } from './orchestrator.js';
+import { getBookingFromStore } from './store.js';
 
 // Gemini Live model. Confirmed-available on AI Studio v1beta via
 // /v1beta/models listing. "native-audio-latest" auto-tracks the newest
@@ -35,6 +36,7 @@ const LIVE_USE_APIKEY = process.env.LIVE_USE_APIKEY !== 'false';
 interface ClientFrame {
   type: 'auth' | 'audio' | 'text' | 'close';
   user_id?: string;
+  user_name?: string;
   language?: string;
   user_gender?: string;
   /** Base64-encoded 16-bit PCM 16 kHz mono audio chunk. */
@@ -178,18 +180,36 @@ async function executeBookingPipeline(
   // agent's #1 recommendation) and re-run with that selection locked,
   // so the model gets a confirmed booking back to narrate — not a
   // "please select" prompt.
-  // Trim the response to what Gemini Live needs to narrate. Anything
-  // larger (intent blob, full options list) tempts the model to read
-  // those fields out loud verbatim instead of producing a natural
-  // confirmation.
+  // If a booking landed, look it up by id to get the rich provider
+  // details (name, rating, neighborhood, price range, time). The booking
+  // agent's own output doesn't carry these fields — they were only on
+  // the booking row that the create_booking tool wrote. Without this
+  // lookup the Live model gets {provider_name: null} and ends up
+  // narrating "booking confirmed with the provider for null".
+  if (first.booking_id) {
+    const booking = await getBookingFromStore(first.booking_id);
+    if (booking) {
+      const b: any = booking;
+      return {
+        status: 'booked',
+        booking_id: b.id,
+        provider_name: b.provider_name ?? 'the provider',
+        provider_rating: b.provider_rating ?? null,
+        provider_neighborhood: b.provider_neighborhood ?? null,
+        service_category: b.service_category_id ?? null,
+        time_iso: b.time_iso ?? null,
+        price_range_pkr: b.estimated_price_pkr ?? null,
+        summary: `Booked ${b.service_category_id} with ${b.provider_name} (${b.provider_rating ?? '?'}★, ${b.provider_neighborhood ?? 'nearby'}) for ${b.time_iso}. Price ${(b.estimated_price_pkr ?? []).join('-')} PKR.`,
+      };
+    }
+  }
+
+  // Booking didn't land — return a minimal failure shape the model
+  // can turn into a graceful "I couldn't find anyone" message.
   return {
-    status: first.booking_id ? 'booked' : first.status,
-    booking_id: first.booking_id,
-    provider_name: first.provider?.name ?? null,
-    time_label: first.time_iso ?? null,
-    summary: first.booking_id
-      ? `Booking confirmed with ${first.provider?.name ?? 'the provider'}${first.time_iso ? ' for ' + first.time_iso : ''}.`
-      : (first.summary || `Pipeline finished, status=${first.status}.`),
+    status: first.status,
+    booking_id: null,
+    summary: first.summary || `No booking — status=${first.status}.`,
   };
 }
 
@@ -297,6 +317,7 @@ export function attachLiveVoice(server: HttpServer): void {
     console.log('[live] client connected');
     let session: Session | null = null;
     let userId = 'voice_anon';
+    let userName = '';
     let language = 'roman_ur';
     let userGender = 'female';
     let closed = false;
@@ -331,15 +352,30 @@ export function attachLiveVoice(server: HttpServer): void {
         // Open the Live session with the user's profile + tool config.
         try {
           userId = frame.user_id ?? userId;
+          userName = (frame.user_name ?? '').trim();
           language = frame.language ?? language;
           userGender = frame.user_gender ?? userGender;
+
+          // Personalize the prompt with the user's name + gender so the
+          // model can greet them by name and pick gender-matched verbs.
+          const personalSystemPrompt =
+            SYSTEM_PROMPT +
+            `\n\n═══════════════════════════════════════════════════════\n` +
+            `USER INFO\n` +
+            `═══════════════════════════════════════════════════════\n` +
+            `Name: ${userName || '(unknown)'}\n` +
+            `Gender: ${userGender}\n` +
+            `Language: ${language}\n` +
+            (userName
+              ? `When the session opens, your VERY FIRST utterance must greet ${userName} by name: "Assalamu Alaikum ${userName}!" — warm, friendly, then ask how you can help ("kaisi madad chahiye?" / "kya kaam karwana hai aaj?"). Don't wait for the user to speak first.`
+              : `When the session opens, your VERY FIRST utterance must be: "Assalamu Alaikum! TapKar AI mein khush aamdeed. Kya kaam karwana hai aaj?" — don't wait for the user to speak first.`);
 
           session = await getAi().live.connect({
             model: LIVE_MODEL,
             config: {
               responseModalities: [Modality.AUDIO],
               systemInstruction: {
-                parts: [{ text: SYSTEM_PROMPT }],
+                parts: [{ text: personalSystemPrompt }],
               },
               tools: [BOOKING_TOOL as any],
               // Voice picked per user gender (matches our gender-aware
@@ -356,6 +392,27 @@ export function attachLiveVoice(server: HttpServer): void {
               onopen: () => {
                 console.log('[live] session opened');
                 send({ type: 'ready', state: 'listening' });
+                // Kick the model into producing the opening greeting.
+                // Without a prompt event, Live just sits silent until the
+                // user speaks. We send a minimal "session started" hint
+                // so the model emits its scripted Salaam-by-name turn.
+                try {
+                  session?.sendClientContent({
+                    turns: [
+                      {
+                        role: 'user',
+                        parts: [
+                          {
+                            text: '[SYSTEM] Voice session just opened. Greet the user now per your system instructions, then wait for their request.',
+                          },
+                        ],
+                      },
+                    ],
+                    turnComplete: true,
+                  });
+                } catch (e: any) {
+                  console.warn('[live] greeting trigger failed:', e?.message ?? e);
+                }
               },
               onmessage: async (msg: any) => {
                 try {

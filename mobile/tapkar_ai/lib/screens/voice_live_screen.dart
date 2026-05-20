@@ -105,6 +105,7 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
       _send({
         'type': 'auth',
         'user_id': widget.state.userId,
+        'user_name': widget.state.auth.displayName,
         'language': widget.state.auth.language,
         'user_gender': widget.state.auth.gender,
       });
