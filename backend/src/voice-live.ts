@@ -59,26 +59,33 @@ interface ServerFrame {
   error?: string;
 }
 
-const SYSTEM_PROMPT = `You are TapKar AI's voice assistant for Pakistan's informal-economy service marketplace. Users speak to you in Urdu, Roman Urdu, or English to book services like plumbers, electricians, AC technicians, tutors, beauticians, mehndi artists, and so on.
+const SYSTEM_PROMPT = `Tum TapKar AI ho — ek Karachi ka helpful insan jo logon ke ghar ke kaam karwane mein madad karta hai. Plumber, electrician, AC wala, tutor, beautician, mehndi, sab kuch. Tum koi formal customer-service bot nahi ho — tum ek seedha-saadha Karachi wala dost ho jo phone pe baat kar raha hai.
 
-YOUR JOB:
-- Listen to what the user wants.
-- When they describe a service they need, EXTRACT the request and call the \`book_a_service\` tool with their full request as text. The tool runs a deterministic 5-agent pipeline (intent, discovery, ranking, booking, follow-up) which finds matching providers and AUTO-BOOKS the top-ranked one.
-- While the tool is running, briefly say something like "thoda intezar karein, providers dhoond rahi/raha hoon" (gender-matched).
-- When the tool returns, NARRATE THE BOOKING — name, rating, neighborhood, time, price range — in 2–3 short sentences. Do NOT ask the user to "select an option" — voice has no picker UI, the system has already chosen the top-ranked provider for them. Read off the details so they know who's coming and when.
+KAISE BAAT KARNI HAI (BAHUT IMPORTANT — yeh tum HO):
+- Bilkul aam Karachi insaan ki tarah. "haan ji", "achha", "theek hai", "OK ji", "abhi karta hoon", "thodi der mein", "bilkul" — yeh natural. Robot ki tarah nahi.
+- Choti choti baat. Lambay paragraphs nahi. 1-2 sentence at a time.
+- Code-switching natural hai — "OK ji book kar diya hai, 4.6 stars wala plumber, kal subah 9 baje aayega." Mix Urdu/Roman-Urdu/English jaise user kar raha hai.
+- Empathy real ho. Paani leak ho raha hai? "Oho, leak bohot pareshan kar deti hai" — phir kaam pe aao. Tumhe sach mein care hai.
+- User ki language match karo: Urdu → Urdu Nastaliq, Roman Urdu → Roman Urdu, English → English. Code-switch okay agar user kar raha hai.
+- Filler words natural use karo — "thoda intezar karein", "ek minute", "abhi check karta/karti hoon".
+- NEVER sound scripted. Same template har baar mat repeat karo.
 
-NARRATION TEMPLATE (adapt to user language):
-- Success: "Ho gaya — [provider name] book kar diya hai, [rating] stars wala, [neighborhood] se. Time [time]. Price [price range] PKR. Kuch aur chahiye?"
-- Auto-picked: result will include \`auto_picked\` with name + time — narrate THAT one as the confirmed booking.
-- Failed: explain briefly what went wrong and what's needed.
+KAAM:
+- User bole kya chahiye. Tum samjho. Agar info missing hai (kya, kahan, kab) — chhota sa pucho. Don't ask 10 things at once.
+- Jab tin teen cheezein clear hain (service + location + time), book_a_service tool call karo, full request text ke saath.
+- Jab tool chal raha hai, casually bolo: "ek second, dhoondh rahi/raha hoon..." ya "abhi check karta hoon..." — kuch natural.
+- Tool return kare to TURANT booking ke details narrate karo. Provider ka name, rating, kab aayega, kitne mein. 1-2 short sentences. Phir pucho "aur kuch chahiye?"
 
-CRITICAL RULES:
-- Always speak in the SAME language the user is using. Urdu → Urdu, Roman Urdu → Roman Urdu, English → English.
-- Be warm and natural, not robotic. You're a human assistant, not a form.
-- If the user gives incomplete info ("kal plumber chahiye" without location), ask conversationally for what's missing BEFORE calling the tool. Don't call the tool with incomplete data.
-- After booking succeeds, ask if they need anything else.
-- "kal" in service-booking ALWAYS means tomorrow (future), never yesterday.
-- NEVER say "select 1, 2, or 3" or "choose an option" — the user can't see a list. Always pick + narrate.`;
+NARRATE EXAMPLE:
+"Ho gaya — Ali Plumbing book kar diya hai, 4.6 stars wala, Gulshan se. Kal subah 9 baje aayega. 1500 se 4000 ke beech price hai. Kuch aur?"
+
+(Adapt — English speaker ko English mein, Urdu Nastaliq speaker ko Nastaliq mein.)
+
+CRITICAL:
+- "kal" = tomorrow (future), kabhi yesterday nahi.
+- NEVER "select option 1, 2, or 3" — voice pe list nahi dikhti, system already pick kar leta hai.
+- Agar tool fail ho jaye, casually batao kya problem hui aur kya chahiye.
+- Off-topic baat? Halki si hansi mein wapas lao kaam pe.`;
 
 const BOOKING_TOOL = {
   functionDeclarations: [
@@ -161,10 +168,11 @@ async function executeBookingPipeline(
         selected_time_iso: pick.iso,
         prior_intent: first.intent,
       },
-      emitStep
+      emitStep,
+      { earlyReturnOnBooking: true }
     );
     second.auto_picked = pick;
-    second.summary = second.last_user_message ||
+    second.summary =
       `Booked with ${pick.provider_name} for ${pick.label ?? pick.iso}, status=${second.status}`;
     return second;
   }
@@ -172,8 +180,11 @@ async function executeBookingPipeline(
   return first;
 }
 
-/** Run runPipeline to completion, forwarding step events to the caller and
- *  collecting a flat result blob the Live model can consume. */
+/** Run runPipeline forward, forwarding step events to the caller. The
+ *  promise resolves AS SOON AS we have enough information to talk to the
+ *  user — booking-step output OR run_complete OR awaiting_user_input —
+ *  whichever comes first. Remaining steps (notably follow-up, which adds
+ *  ~10–15 s for no UX benefit in voice mode) drain in the background. */
 async function drainPipeline(
   input: {
     user_id: string;
@@ -184,7 +195,8 @@ async function drainPipeline(
     selected_time_iso?: string;
     prior_intent?: any;
   },
-  emitStep: (step: unknown) => void
+  emitStep: (step: unknown) => void,
+  opts: { earlyReturnOnBooking: boolean } = { earlyReturnOnBooking: false }
 ): Promise<any> {
   const gen = runPipeline(input);
   const collected: any = {
@@ -194,38 +206,67 @@ async function drainPipeline(
     last_user_message: '',
     options: [],
     intent: null,
+    provider: null,
+    time_iso: null,
   };
-  while (true) {
-    const r = await gen.next();
-    if (r.done) break;
-    const evt: any = r.value;
-    emitStep(evt);
-    if (evt.event === 'user_message') {
-      const txt = (evt.data?.text as string) ?? '';
-      if (txt) collected.last_user_message = txt;
-      const alts = evt.data?.alternatives as any[] | undefined;
-      if (alts && alts.length > 0) {
-        collected.options = alts.map((a) => ({
-          provider_id: a.provider_id,
-          provider_name: a.provider_name,
-          iso: a.iso,
-          label: a.label,
-        }));
+  let returned = false;
+  const result: Promise<any> = new Promise(async (resolve) => {
+    while (true) {
+      const r = await gen.next();
+      if (r.done) {
+        if (!returned) {
+          returned = true;
+          collected.summary = collected.last_user_message ||
+            `Pipeline finished, status=${collected.status}`;
+          resolve(collected);
+        }
+        return;
       }
-    } else if (evt.event === 'step' && evt.data?.agent === 'intent') {
-      collected.intent = evt.data.output;
-    } else if (evt.event === 'step' && evt.data?.agent === 'booking') {
-      const out = evt.data.output;
-      if (out?.booking_id) collected.booking_id = out.booking_id;
-      if (out?.status) collected.status = out.status;
-    } else if (evt.event === 'run_complete') {
-      const s = evt.data?.status as string | undefined;
-      if (s === 'awaiting_user_input') collected.status = 'needs_user_input';
-      else if (collected.status === 'unknown' && s) collected.status = s;
+      const evt: any = r.value;
+      emitStep(evt);
+      if (evt.event === 'user_message') {
+        const txt = (evt.data?.text as string) ?? '';
+        if (txt) collected.last_user_message = txt;
+        const alts = evt.data?.alternatives as any[] | undefined;
+        if (alts && alts.length > 0) {
+          collected.options = alts.map((a) => ({
+            provider_id: a.provider_id,
+            provider_name: a.provider_name,
+            iso: a.iso,
+            label: a.label,
+          }));
+        }
+      } else if (evt.event === 'step' && evt.data?.agent === 'intent') {
+        collected.intent = evt.data.output;
+      } else if (evt.event === 'step' && evt.data?.agent === 'booking') {
+        const out = evt.data.output;
+        if (out?.booking_id) collected.booking_id = out.booking_id;
+        if (out?.status) collected.status = out.status;
+        if (out?.provider) collected.provider = out.provider;
+        if (out?.time_iso) collected.time_iso = out.time_iso;
+        // Voice mode optimization: as soon as the booking step lands,
+        // hand the result back so Gemini Live can start narrating. The
+        // follow-up agent will continue draining in the background.
+        if (opts.earlyReturnOnBooking && !returned && collected.booking_id) {
+          returned = true;
+          collected.summary = `Booking ${collected.status}, id=${collected.booking_id}`;
+          resolve(collected);
+        }
+      } else if (evt.event === 'run_complete') {
+        const s = evt.data?.status as string | undefined;
+        if (s === 'awaiting_user_input') collected.status = 'needs_user_input';
+        else if (collected.status === 'unknown' && s) collected.status = s;
+        if (!returned) {
+          returned = true;
+          collected.summary = collected.last_user_message ||
+            `Pipeline finished, status=${collected.status}`;
+          resolve(collected);
+        }
+        // Keep draining (cheap) so the follow-up agent still runs.
+      }
     }
-  }
-  collected.summary = collected.last_user_message || `Pipeline finished, status=${collected.status}`;
-  return collected;
+  });
+  return result;
 }
 
 export function attachLiveVoice(server: HttpServer): void {
