@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../models/types.dart';
 import '../theme.dart';
+import '../utils/time.dart';
 
 /// Stack of selectable provider tiles shown when the backend yields
 /// `mode: show_options`. User taps one → callback fires with the chosen option.
@@ -171,12 +171,5 @@ class _Tile extends StatelessWidget {
         ],
       );
 
-  String _formatWhen(String iso) {
-    try {
-      final d = DateTime.parse(iso).toLocal();
-      return DateFormat('EEE, d MMM · h:mm a').format(d);
-    } catch (_) {
-      return iso;
-    }
-  }
+  String _formatWhen(String iso) => formatBookingWhen(iso);
 }

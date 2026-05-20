@@ -51,6 +51,12 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
   String _transcript = '';
   String _lastToolMessage = '';
   bool _muted = false;
+  // True while we're playing the bot's audio back to the user. Mic chunks
+  // captured during this window MUST NOT be forwarded — otherwise the
+  // mic picks up the speaker's own output and we either loop or confuse
+  // the model into staying silent on subsequent turns.
+  bool _botPlaying = false;
+  Timer? _playbackSafetyTimer;
   late final AnimationController _pulse;
 
   @override
@@ -104,7 +110,9 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
       numChannels: 1,
     ));
     _micSub = stream.listen((chunk) {
-      if (_muted) return;
+      // Drop chunks while user has muted OR bot is mid-playback. Otherwise
+      // the bot hears itself and either echoes or stops responding.
+      if (_muted || _botPlaying) return;
       _send({'type': 'audio', 'audio': base64Encode(chunk)});
     });
   }
@@ -186,26 +194,35 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
 
   Future<void> _flushAudio() async {
     if (_pcmOutBuffer.isEmpty) {
-      _setStateFromString('listening');
+      _resumeListening();
       return;
     }
     final pcm = Uint8List.fromList(_pcmOutBuffer);
     _pcmOutBuffer.clear();
     final wav = _pcmToWav(pcm, sampleRate: 24000);
+    // Estimated playback length (24 kHz, 16-bit mono) + 1 s slack. Used
+    // as a safety backstop in case onPlayerComplete never fires.
+    final estMs = (pcm.length / (24000 * 2) * 1000).ceil() + 1000;
+    _botPlaying = true;
+    _playbackSafetyTimer?.cancel();
+    _playbackSafetyTimer =
+        Timer(Duration(milliseconds: estMs), _resumeListening);
     try {
-      // Briefly pause mic while bot speaks so we don't pipe its voice
-      // back to it. Resume after playback completes.
-      _micSub?.pause();
       await _player.stop();
       await _player.play(BytesSource(wav, mimeType: 'audio/wav'));
-      _player.onPlayerComplete.first.then((_) {
-        _micSub?.resume();
-        _setStateFromString('listening');
-      });
-    } catch (e) {
-      _micSub?.resume();
-      _setStateFromString('listening');
+      _player.onPlayerComplete.first.then((_) => _resumeListening());
+    } catch (_) {
+      _resumeListening();
     }
+  }
+
+  /// Restore the listening state after a bot turn ends — runs from either
+  /// the player-complete callback OR the safety timer, whichever wins.
+  void _resumeListening() {
+    _playbackSafetyTimer?.cancel();
+    _playbackSafetyTimer = null;
+    _botPlaying = false;
+    if (mounted) _setStateFromString('listening');
   }
 
   /// Wrap raw 16-bit PCM mono in a minimal RIFF/WAV header so audioplayers
@@ -282,6 +299,7 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
 
   @override
   void dispose() {
+    _playbackSafetyTimer?.cancel();
     _pulse.dispose();
     _stopMic();
     _wsSub?.cancel();

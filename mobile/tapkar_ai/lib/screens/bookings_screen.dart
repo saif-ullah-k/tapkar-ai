@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 import '../i18n.dart';
 import '../services/user_api.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import '../utils/time.dart';
 
 /// Customer's bookings — upcoming + past, with status pills.
 class BookingsScreen extends StatefulWidget {
@@ -294,12 +294,5 @@ class _BookingCard extends StatelessWidget {
       .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
       .join(' ');
 
-  String _formatWhen(String iso) {
-    try {
-      final d = DateTime.parse(iso).toLocal();
-      return DateFormat('EEE, d MMM · h:mm a').format(d);
-    } catch (_) {
-      return iso;
-    }
-  }
+  String _formatWhen(String iso) => formatBookingWhen(iso);
 }

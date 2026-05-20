@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../i18n.dart';
 import '../services/provider_api.dart';
 import '../state/auth_state.dart';
 import '../theme.dart';
+import '../utils/time.dart';
 import 'provider_chat_setup_screen.dart';
 import 'provider_onboarding_screen.dart';
 
@@ -1026,14 +1026,7 @@ class _BookingCard extends StatelessWidget {
   String _titleCase(String s) =>
       s.split(' ').map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}').join(' ');
 
-  String _formatWhen(String iso) {
-    try {
-      final d = DateTime.parse(iso).toLocal();
-      return DateFormat('EEE, d MMM · h:mm a').format(d);
-    } catch (_) {
-      return iso;
-    }
-  }
+  String _formatWhen(String iso) => formatBookingWhen(iso);
 }
 
 class _Action {

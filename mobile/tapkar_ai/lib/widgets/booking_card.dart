@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart' hide TextDirection;
 import '../models/types.dart';
 import '../theme.dart';
+import '../utils/time.dart';
 
 class BookingCard extends StatefulWidget {
   final BookingResult booking;
@@ -211,14 +211,7 @@ class _BookingCardState extends State<BookingCard> {
   String _titleCase(String s) =>
       s.split(' ').map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}').join(' ');
 
-  String _formatWhen(String iso) {
-    try {
-      final d = DateTime.parse(iso).toLocal();
-      return DateFormat('EEE, d MMM · h:mm a').format(d);
-    } catch (_) {
-      return iso;
-    }
-  }
+  String _formatWhen(String iso) => formatBookingWhen(iso);
 }
 
 class _FollowUpRow extends StatelessWidget {
@@ -277,11 +270,7 @@ class _FollowUpRow extends StatelessWidget {
   }
 
   String _when() {
-    try {
-      final d = DateTime.parse(job.fireAtIso).toLocal();
-      return '${DateFormat('EEE h:mm a').format(d)} · ${job.type.toUpperCase()}';
-    } catch (_) {
-      return job.type.toUpperCase();
-    }
+    final when = formatFollowUpWhen(job.fireAtIso);
+    return '$when · ${job.type.toUpperCase()}';
   }
 }
