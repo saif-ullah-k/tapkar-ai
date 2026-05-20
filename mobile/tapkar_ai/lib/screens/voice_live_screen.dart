@@ -38,6 +38,9 @@ class VoiceLiveScreen extends StatefulWidget {
   String get _userName => state?.auth.displayName ?? auth?.displayName ?? '';
   String get _language => state?.auth.language ?? auth?.language ?? 'roman_ur';
   String get _userGender => state?.auth.gender ?? auth?.gender ?? 'male';
+  /// Phone collected at Firebase signup. Sent up so the provider voice
+  /// agent doesn't have to re-ask the user for it during profile setup.
+  String get _userPhone => state?.auth.phone ?? auth?.phone ?? '';
   /// 'user' for customer flow (booking services); 'provider' for service-
   /// provider flow (editing own profile, availability, prices).
   String get _mode => state != null ? 'user' : 'provider';
@@ -134,6 +137,7 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
         'type': 'auth',
         'user_id': widget._userId,
         'user_name': widget._userName,
+        'user_phone': widget._userPhone,
         'language': widget._language,
         'user_gender': widget._userGender,
         'mode': widget._mode,

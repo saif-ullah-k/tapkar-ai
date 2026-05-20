@@ -43,6 +43,9 @@ interface ClientFrame {
   type: 'auth' | 'audio' | 'text' | 'close';
   user_id?: string;
   user_name?: string;
+  /** Phone the user signed up with (Firebase Auth phone OTP). Pre-filled
+   *  into the provider profile so the voice agent doesn't have to re-ask. */
+  user_phone?: string;
   language?: string;
   user_gender?: string;
   /** 'user' = customer booking flow; 'provider' = service-provider profile
@@ -156,20 +159,21 @@ PERSONALITY (Karachi friend, not bot):
 - Empathy real — "achha new register hona hai? Bohot achhi baat hai, abhi help karta hoon" — phir kaam pe aao.
 - Filler natural — "ek minute", "thoda batayein", "achha to".
 
-SIGNUP FLOW — ONE field at a time. Sequence:
+SIGNUP FLOW — ONE field at a time. Sequence (PHONE IS ALREADY KNOWN — DO NOT ASK FOR IT):
    1. Naam — "aap ka business ya naam kya hai?" (call update_provider_profile { name })
    2. Category — "kya kaam karte ho? plumber, electrician, AC wala, tutor, etc?" (call update_provider_profile { category })
    3. Area / neighborhood — "Karachi mein kis area mein kaam karte ho? Gulshan? DHA? Clifton?" (call update_provider_profile { neighborhood })
-   4. Phone — "phone number bata dein customers ke liye?" (call update_provider_profile { phone })
-   5. Price range — "kitna charge karte ho usually? Like 1500-4000 PKR?" (call update_provider_profile { price_min_pkr, price_max_pkr })
-   6. Weekly hours — "kab kab available rehte ho hafte mein? Daily same hours ya alag alag?" (call update_provider_profile { availability: { monday: ["09:00-18:00"], ... } })
+   4. Price range — "kitna charge karte ho usually? Like 1500-4000 PKR?" (call update_provider_profile { price_min_pkr, price_max_pkr })
+   5. Weekly hours — "kab kab available rehte ho hafte mein? Daily same hours ya alag alag?" (call update_provider_profile { availability: { monday: ["09:00-18:00"], ... } })
+
+PHONE: Already collected at signup. NEVER ask "phone number kya hai" or similar. Backend auto-fills it from the Firebase auth phone. Skip this entirely.
 
 KEY RULES:
 - PEHLE 1-2 word bolo, phir tool call karo. "Achha [name] save kar diya..." se start karo.
 - Tool call ke baad CONFIRM: "OK ji, naam [X] save ho gaya. Achha ab batayein kya kaam karte ho?"
 - Don't ask multiple things at once. ONE field, wait for answer, save, move to next.
 - Agar user kuch ambiguous bole (e.g. "subah se shaam tak"), clarify time before calling tool.
-- After step 6, say "Ho gaya! Aap ka profile ready hai. Ab customers aap ko dekh sakte hain. Aur kuch chahiye? Off-day mark karna ho ya kuch change karna ho to bolein."
+- After step 5 (weekly hours), say "Ho gaya! Aap ka profile ready hai. Ab customers aap ko dekh sakte hain. Aur kuch chahiye? Off-day mark karna ho ya kuch change karna ho to bolein."
 
 WHAT YOU CAN DO:
 1. **update_provider_profile** — Use this for EVERY field collection step above. Backend will create the profile on first call (you give name + category) and patch it on every subsequent call.
@@ -277,6 +281,7 @@ async function executeProviderTool(
   toolName: string,
   args: any,
   userId: string,
+  ctx: { userPhone?: string } = {},
 ): Promise<any> {
   let providerId = await getProviderIdForUser(userId);
   const all = loadProviders();
@@ -329,6 +334,9 @@ async function executeProviderTool(
       gender: args.gender ?? 'male',
       languages: args.languages ?? ['ur', 'roman_ur'],
       price_range_pkr: [1000, 5000],
+      // Pre-fill phone from the Firebase signup. Voice agent will NOT
+      // ask for it during the signup flow (see system prompt).
+      phone: ctx.userPhone || args.phone || '',
       availability: {
         monday: [], tuesday: [], wednesday: [], thursday: [],
         friday: [], saturday: [], sunday: [],
@@ -363,6 +371,12 @@ async function executeProviderTool(
     }
     if (args.availability && typeof args.availability === 'object') {
       updates.availability = { ...(existing.availability ?? {}), ...args.availability };
+    }
+    // Backfill phone from signup if the profile somehow doesn't have one
+    // yet (older record, or the create path above failed to set it).
+    // Means the user never needs to dictate their phone to the bot.
+    if (!existing.phone && ctx.userPhone) {
+      updates.phone = ctx.userPhone;
     }
     const updated = { ...existing, ...updates };
     await addProvider(updated, userId);
@@ -624,6 +638,7 @@ export function attachLiveVoice(server: HttpServer): void {
     let session: Session | null = null;
     let userId = 'voice_anon';
     let userName = '';
+    let userPhone = '';
     let language = 'roman_ur';
     let userGender = 'female';
     let mode: 'user' | 'provider' = 'user';
@@ -660,6 +675,7 @@ export function attachLiveVoice(server: HttpServer): void {
         try {
           userId = frame.user_id ?? userId;
           userName = (frame.user_name ?? '').trim();
+          userPhone = (frame.user_phone ?? '').trim();
           language = frame.language ?? language;
           userGender = frame.user_gender ?? userGender;
           mode = frame.mode === 'provider' ? 'provider' : 'user';
@@ -811,7 +827,12 @@ export function attachLiveVoice(server: HttpServer): void {
                         }
                       } else if (isProviderTool) {
                         try {
-                          const result = await executeProviderTool(fc.name, fc.args ?? {}, userId);
+                          const result = await executeProviderTool(
+                            fc.name,
+                            fc.args ?? {},
+                            userId,
+                            { userPhone },
+                          );
                           console.log(`[live] provider tool ${fc.name} ->`, JSON.stringify(result).slice(0, 120));
                           session?.sendToolResponse({
                             functionResponses: [
