@@ -97,25 +97,22 @@ class HomeScreen extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
         child: Row(
           children: [
-            Container(
-              width: 32, height: 32,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppColors.violet, AppColors.booking],
-                ),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              alignment: Alignment.center,
-              child: const Text('⚡', style: TextStyle(fontSize: 16)),
-            ),
-            const SizedBox(width: 10),
+            // Official wordmark — replaces the old gradient box + ⚡ emoji
+            // + "TapKar AI" text combo. The image already contains the
+            // orb + name, so we just leave the tagline on its own line.
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('TapKar AI',
-                      style: AppFonts.base(size: 17, weight: FontWeight.w800)),
+                  Image.asset(
+                    'assets/brand/logo-wordmark.png',
+                    height: 36,
+                    fit: BoxFit.contain,
+                    alignment: Alignment.centerLeft,
+                    filterQuality: FilterQuality.medium,
+                  ),
+                  const SizedBox(height: 2),
                   Text(t.appTagline,
                       style: AppFonts.base(size: 11, color: Colors.white54)),
                 ],

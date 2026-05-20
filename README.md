@@ -1,5 +1,9 @@
 # TapKar AI
 
+<p align="center">
+  <img src="branding/logo-wordmark.png" alt="TapKar AI" width="420">
+</p>
+
 > ### *"Bas tap karo — AI sab kar dega."*
 > **Just tap. The AI does everything.**
 

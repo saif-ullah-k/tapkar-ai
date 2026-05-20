@@ -184,27 +184,21 @@ class _ChatScreenState extends State<ChatScreen> {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 28, height: 28,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppColors.violet, AppColors.booking],
-                ),
-                borderRadius: BorderRadius.circular(7),
-              ),
-              alignment: Alignment.center,
-              child: const Text('⚡', style: TextStyle(fontSize: 14)),
+            // Brand wordmark — replaces the old ⚡ + text pair with the
+            // official TapKar AI logo. PNG with transparent black bg, so
+            // it sits flush on the AppBar without a wrapper.
+            Image.asset(
+              'assets/brand/logo-wordmark.png',
+              height: 32,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.medium,
             ),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('TapKar AI',
-                    style: AppFonts.base(size: 15, weight: FontWeight.w700)),
-                Text('Bas tap karo — AI sab kar dega',
-                    style: AppFonts.base(size: 10, color: Colors.white54)),
-              ],
+            const SizedBox(width: 8),
+            // Tagline only — the wordmark already carries the name.
+            Flexible(
+              child: Text('Bas tap karo — AI sab kar dega',
+                  style: AppFonts.base(size: 10, color: Colors.white54),
+                  overflow: TextOverflow.ellipsis),
             ),
           ],
         ),

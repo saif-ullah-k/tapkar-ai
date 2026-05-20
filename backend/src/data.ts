@@ -137,6 +137,25 @@ export async function addProvider(provider: Provider, ownerUserId: string): Prom
   }
 }
 
+/** Fetch a provider record straight from Firestore by id. Returns null if
+ *  not found. Used by hot paths that can't trust the in-memory cache (which
+ *  may be empty after a Cloud Run restart). Does NOT mutate the in-memory
+ *  store — call addProvider separately if you want that. */
+export async function getProviderFromFirestore(providerId: string): Promise<Provider | null> {
+  try {
+    const fs = await getFirestore();
+    if (!fs) return null;
+    const snap = await fs.doc(`providers/${providerId}`).get();
+    if (!snap.exists) return null;
+    const data = snap.data() as any;
+    delete data.owner_user_id;
+    return data as Provider;
+  } catch (e: any) {
+    console.warn('[data] getProviderFromFirestore failed (ignored):', e?.message ?? e);
+    return null;
+  }
+}
+
 /** Look up the provider_id owned by a given Firebase user, if any. */
 export async function getProviderIdForUser(userId: string): Promise<string | undefined> {
   const cached = _userIdToProviderId.get(userId);

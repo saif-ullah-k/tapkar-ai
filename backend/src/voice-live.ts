@@ -19,7 +19,12 @@ import { GoogleGenAI, Modality, Type, type Session } from '@google/genai';
 import { config } from './config.js';
 import { runPipeline } from './orchestrator.js';
 import { getBookingFromStore } from './store.js';
-import { loadProviders, addProvider, getProviderIdForUser } from './data.js';
+import {
+  loadProviders,
+  addProvider,
+  getProviderIdForUser,
+  getProviderFromFirestore,
+} from './data.js';
 
 // Gemini Live model. Confirmed-available on AI Studio v1beta via
 // /v1beta/models listing. "native-audio-latest" auto-tracks the newest
@@ -237,9 +242,36 @@ async function executeProviderTool(
   const all = loadProviders();
   let existing: any = providerId ? all.find((p) => p.id === providerId) : undefined;
 
-  // SIGNUP path: no profile linked to this user yet. update_provider_profile
-  // is allowed to act as a creator — collect what the model has and seed a
-  // fresh profile. The other override tools still need an existing profile.
+  // Defensive Firestore lookup before we decide a profile is "missing".
+  // Two failure modes this protects against:
+  //  1. Cold start: in-memory _providers cache is empty (only seed data),
+  //     so all.find() returns nothing even though Firestore has the doc.
+  //     getProviderIdForUser already hydrates in this case, but if the
+  //     user_providers mapping is stale or missing the hydration is
+  //     skipped and we'd fall through to the "create" path.
+  //  2. user_providers/{uid} orphaned: the mapping doc got cleaned up but
+  //     the deterministic providers/p_user_{suffix} doc still exists.
+  //     Without this check we'd overwrite the real provider record with
+  //     default fields — exactly the bug that just nuked the user's
+  //     Saif profile.
+  if (!existing) {
+    const deterministicId = providerId ?? `p_user_${userId.slice(-8)}`;
+    const fromFirestore = await getProviderFromFirestore(deterministicId);
+    if (fromFirestore) {
+      providerId = deterministicId;
+      existing = fromFirestore;
+      // Hydrate the in-memory cache so subsequent code sees it.
+      if (!all.find((p) => p.id === providerId)) {
+        all.unshift(existing as any);
+      }
+      console.log(`[provider-voice] hydrated existing profile ${providerId} from Firestore (cache miss)`);
+    }
+  }
+
+  // SIGNUP path: no profile linked to this user yet AND no doc at the
+  // deterministic id. update_provider_profile is allowed to act as a
+  // creator — collect what the model has and seed a fresh profile. The
+  // other override tools still need an existing profile.
   if (!existing && toolName === 'update_provider_profile') {
     if (!args.name && !args.category) {
       return {
