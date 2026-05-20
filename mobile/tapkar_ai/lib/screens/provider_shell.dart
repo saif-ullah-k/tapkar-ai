@@ -26,6 +26,9 @@ class ProviderShell extends StatefulWidget {
 class _ProviderShellState extends State<ProviderShell> {
   int _index = 0;
   late final List<Widget> _tabs;
+  Timer? _unreadPollTimer;
+  final Map<String, String> _lastSeenChatIdByBooking = {};
+  final Set<String> _unreadBookings = <String>{};
 
   @override
   void initState() {
@@ -36,6 +39,77 @@ class _ProviderShellState extends State<ProviderShell> {
       _ProviderAssistTab(auth: widget.auth),
       _ProviderProfileTab(auth: widget.auth),
     ];
+    // Poll cross-tab so the Messages tab's bottom-nav badge updates
+    // even when the provider is sitting on Jobs/Profile/Assist.
+    _pollUnread();
+    _unreadPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (mounted) _pollUnread();
+    });
+  }
+
+  @override
+  void dispose() {
+    _unreadPollTimer?.cancel();
+    super.dispose();
+  }
+
+  static const _apiUrl = String.fromEnvironment(
+    'API_URL',
+    defaultValue: 'https://tapkar-ai-backend-d56rhra4sa-uc.a.run.app',
+  );
+
+  Future<void> _pollUnread() async {
+    final pid = widget.auth.providerId;
+    if (pid == null || pid.isEmpty) return;
+    try {
+      final api = ProviderApi();
+      final bookings = await api.listMyBookings(pid);
+      final freshUnread = <String>{};
+      // Preserve previously-unread bookings (until provider opens the
+      // chat — the tab calls clearUnread).
+      freshUnread.addAll(_unreadBookings);
+      for (final b in bookings) {
+        final id = b['id'] as String?;
+        if (id == null) continue;
+        try {
+          final r = await http.get(Uri.parse('$_apiUrl/bookings/$id/messages'))
+              .timeout(const Duration(seconds: 4));
+          if (r.statusCode != 200) continue;
+          final data = jsonDecode(r.body) as Map<String, dynamic>;
+          final msgs = (data['messages'] as List?)
+                  ?.whereType<Map<String, dynamic>>()
+                  .toList() ??
+              const <Map<String, dynamic>>[];
+          if (msgs.isEmpty) continue;
+          final latest = msgs.last;
+          final latestId = latest['id'] as String?;
+          if (latestId == null) continue;
+          final prev = _lastSeenChatIdByBooking[id];
+          if (prev == null) {
+            // First observation: hydrate, don't mark unread.
+            _lastSeenChatIdByBooking[id] = latestId;
+          } else if (prev != latestId && latest['from'] == 'user') {
+            _lastSeenChatIdByBooking[id] = latestId;
+            freshUnread.add(id);
+          } else {
+            _lastSeenChatIdByBooking[id] = latestId;
+          }
+        } catch (_) {/* per-booking transient */}
+      }
+      if (!mounted) return;
+      if (freshUnread.length != _unreadBookings.length ||
+          !freshUnread.containsAll(_unreadBookings)) {
+        setState(() {
+          _unreadBookings
+            ..clear()
+            ..addAll(freshUnread);
+        });
+      }
+    } catch (_) {/* poll transient */}
+  }
+
+  void clearUnread(String bookingId) {
+    if (_unreadBookings.remove(bookingId)) setState(() {});
   }
 
   @override
@@ -51,6 +125,7 @@ class _ProviderShellState extends State<ProviderShell> {
             index: _index,
             onTap: (i) => setState(() => _index = i),
             t: t,
+            messagesBadgeCount: _unreadBookings.length,
           ),
         );
       },
@@ -62,7 +137,13 @@ class _BottomNav extends StatelessWidget {
   final int index;
   final ValueChanged<int> onTap;
   final T t;
-  const _BottomNav({required this.index, required this.onTap, required this.t});
+  final int messagesBadgeCount;
+  const _BottomNav({
+    required this.index,
+    required this.onTap,
+    required this.t,
+    this.messagesBadgeCount = 0,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -92,6 +173,7 @@ class _BottomNav extends StatelessWidget {
                 selected: index == 1,
                 onTap: () => onTap(1),
                 accent: AppColors.followup,
+                badgeCount: messagesBadgeCount,
               ),
               _NavCenterItem(
                 label: t.navAskAi,
@@ -121,6 +203,7 @@ class _NavItem extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
   final Color accent;
+  final int badgeCount;
   const _NavItem({
     required this.label,
     required this.icon,
@@ -128,6 +211,7 @@ class _NavItem extends StatelessWidget {
     required this.selected,
     required this.onTap,
     required this.accent,
+    this.badgeCount = 0,
   });
 
   @override
@@ -141,7 +225,37 @@ class _NavItem extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(selected ? activeIcon : icon, color: color, size: 22),
+              SizedBox(
+                width: 30, height: 24,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    Icon(selected ? activeIcon : icon, color: color, size: 22),
+                    if (badgeCount > 0)
+                      Positioned(
+                        top: -2, right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                          decoration: BoxDecoration(
+                            color: AppColors.violet,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.surface, width: 1.5),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            badgeCount > 99 ? '99+' : '$badgeCount',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 3),
               Text(
                 label,
@@ -950,7 +1064,15 @@ class _ProviderChatThreadRow extends StatelessWidget {
     final tsLabel = thread.lastTs.length >= 16
         ? thread.lastTs.substring(11, 16)
         : '';
-    final hasUnread = thread.unread;
+    // The Messages tab's local "unread" flag PLUS the shell-level unread
+    // set (which drives the bottom-nav badge across tabs) — show the
+    // dot if either thinks this thread has unread.
+    final shellUnread = context
+            .findAncestorStateOfType<_ProviderShellState>()
+            ?._unreadBookings
+            .contains(thread.bookingId) ??
+        false;
+    final hasUnread = thread.unread || shellUnread;
     final categoryLabel = thread.category
         .replaceAll('_', ' ')
         .split(' ')
@@ -969,6 +1091,10 @@ class _ProviderChatThreadRow extends StatelessWidget {
             ),
           ));
           onRead();
+          // Also clear shell-level unread so the bottom-nav badge updates.
+          context
+              .findAncestorStateOfType<_ProviderShellState>()
+              ?.clearUnread(thread.bookingId);
         },
         child: Container(
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),

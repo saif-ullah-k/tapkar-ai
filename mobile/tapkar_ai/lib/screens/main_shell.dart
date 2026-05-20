@@ -39,8 +39,11 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
+    // Listen to AppState (not just auth) so the bottom-nav unread
+    // badge updates the moment the global chat poller bumps the
+    // unread counter.
     return AnimatedBuilder(
-      animation: widget.state.auth,
+      animation: Listenable.merge([widget.state, widget.state.auth]),
       builder: (_, __) {
         final t = T(widget.state.auth.language);
         return Scaffold(
@@ -50,6 +53,7 @@ class _MainShellState extends State<MainShell> {
             index: _index,
             onTap: _jumpTo,
             t: t,
+            inboxBadgeCount: widget.state.totalUnreadChatCount,
           ),
         );
       },
@@ -61,7 +65,13 @@ class _BottomNav extends StatelessWidget {
   final int index;
   final ValueChanged<int> onTap;
   final T t;
-  const _BottomNav({required this.index, required this.onTap, required this.t});
+  final int inboxBadgeCount;
+  const _BottomNav({
+    required this.index,
+    required this.onTap,
+    required this.t,
+    this.inboxBadgeCount = 0,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -101,6 +111,7 @@ class _BottomNav extends StatelessWidget {
                 activeIcon: Icons.notifications_rounded,
                 selected: index == 3,
                 onTap: () => onTap(3),
+                badgeCount: inboxBadgeCount,
               ),
               _NavItem(
                 label: t.navProfile,
@@ -123,12 +134,16 @@ class _NavItem extends StatelessWidget {
   final IconData activeIcon;
   final bool selected;
   final VoidCallback onTap;
+  /// Unread count to render as a small violet badge over the icon's
+  /// top-right corner. 0 hides the badge entirely.
+  final int badgeCount;
   const _NavItem({
     required this.label,
     required this.icon,
     required this.activeIcon,
     required this.selected,
     required this.onTap,
+    this.badgeCount = 0,
   });
 
   @override
@@ -143,7 +158,37 @@ class _NavItem extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(selected ? activeIcon : icon, color: color, size: 22),
+              SizedBox(
+                width: 30, height: 24,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    Icon(selected ? activeIcon : icon, color: color, size: 22),
+                    if (badgeCount > 0)
+                      Positioned(
+                        top: -2, right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                          decoration: BoxDecoration(
+                            color: AppColors.violet,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.surface, width: 1.5),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            badgeCount > 99 ? '99+' : '$badgeCount',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 2),
               Text(
                 label,

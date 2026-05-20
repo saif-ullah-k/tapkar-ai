@@ -56,6 +56,11 @@ class AppState extends ChangeNotifier {
   final Map<String, String> _lastSeenChatIdByBooking = {};
   final Map<String, int> _unreadCountByBooking = {};
 
+  /// Sum across all bookings — drives the unread badge on the Inbox
+  /// bottom-nav icon.
+  int get totalUnreadChatCount =>
+      _unreadCountByBooking.values.fold<int>(0, (a, b) => a + b);
+
   /// Mark a booking's chat as read (called from BookingChatScreen so the
   /// inbox badge disappears when the user opens the thread).
   void markChatRead(String bookingId) {

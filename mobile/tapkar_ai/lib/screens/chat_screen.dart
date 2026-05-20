@@ -32,12 +32,40 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _showTrace = false;
   /// Track which bot messages we've already spoken so we don't repeat on rebuild.
   int _lastSpokenIdx = -1;
+  /// Hash of the last bot text we voiced. Survives screen rebuilds by
+  /// also being stamped onto the message list — if the latest message's
+  /// text matches this, we skip TTS. Prevents the "refresh re-speaks
+  /// the last booking confirmation" bug.
+  String? _lastSpokenText;
+  /// True once we've finished the initial restore-from-disk hydration.
+  /// Suppresses TTS during the first build so the app doesn't say
+  /// "Saifullah ne booking confirm kar di" out loud the moment the
+  /// user reopens the app.
+  bool _ttsArmed = false;
 
   @override
   void initState() {
     super.initState();
     widget.state.addListener(_onStateChange);
     widget.state.addListener(_maybeSpeakLatest);
+    // Arm TTS after a short delay — long enough for the restored chat
+    // history to land, short enough that an actual new bot message
+    // arriving within the first second still gets spoken.
+    Future.delayed(const Duration(milliseconds: 1200), () {
+      if (mounted) {
+        // Stamp the current latest bot message as "already spoken" so
+        // future polls don't re-speak it.
+        final msgs = widget.state.messages;
+        for (int i = msgs.length - 1; i >= 0; i--) {
+          if (!msgs[i].fromUser) {
+            _lastSpokenIdx = i;
+            _lastSpokenText = msgs[i].text;
+            break;
+          }
+        }
+        _ttsArmed = true;
+      }
+    });
   }
 
   @override
@@ -118,8 +146,15 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Called on every state change. If the latest message is a NEW bot reply
-  /// (text + alternatives-aware) we speak it aloud.
+  /// (text + alternatives-aware) we speak it aloud — but ONLY when:
+  ///   • TTS is armed (a short delay after initState lets the restored
+  ///     chat history settle without re-voicing).
+  ///   • The latest text is different from the last thing we spoke
+  ///     (guards against the chat-screen rebuilding after navigation /
+  ///     a global poller's notifyListeners and re-firing TTS on the
+  ///     same already-voiced message).
   void _maybeSpeakLatest() {
+    if (!_ttsArmed) return;
     final msgs = widget.state.messages;
     if (msgs.isEmpty) return;
     final idx = msgs.length - 1;
@@ -129,7 +164,13 @@ class _ChatScreenState extends State<ChatScreen> {
       _lastSpokenIdx = idx; // skip user msgs but advance pointer
       return;
     }
+    if (m.text == _lastSpokenText) {
+      // Same text we already voiced — likely a rebuild, not a new reply.
+      _lastSpokenIdx = idx;
+      return;
+    }
     _lastSpokenIdx = idx;
+    _lastSpokenText = m.text;
     _tts.speak(
       m.text,
       lang: m.language ?? widget.state.auth.language,
