@@ -392,27 +392,6 @@ export function attachLiveVoice(server: HttpServer): void {
               onopen: () => {
                 console.log('[live] session opened');
                 send({ type: 'ready', state: 'listening' });
-                // Kick the model into producing the opening greeting.
-                // Without a prompt event, Live just sits silent until the
-                // user speaks. We send a minimal "session started" hint
-                // so the model emits its scripted Salaam-by-name turn.
-                try {
-                  session?.sendClientContent({
-                    turns: [
-                      {
-                        role: 'user',
-                        parts: [
-                          {
-                            text: '[SYSTEM] Voice session just opened. Greet the user now per your system instructions, then wait for their request.',
-                          },
-                        ],
-                      },
-                    ],
-                    turnComplete: true,
-                  });
-                } catch (e: any) {
-                  console.warn('[live] greeting trigger failed:', e?.message ?? e);
-                }
               },
               onmessage: async (msg: any) => {
                 try {
@@ -507,6 +486,35 @@ export function attachLiveVoice(server: HttpServer): void {
               },
             },
           });
+
+          // Now that `session` is actually assigned (the await above just
+          // resolved + onopen has fired), kick the model into producing
+          // the Salaam greeting. Without a prompt, Live sits silent
+          // until the user speaks first. The greeting trigger MUST live
+          // here — not inside the onopen callback — because onopen runs
+          // before this await returns, so the `session` reference there
+          // is still null and any sendClientContent silently no-ops.
+          try {
+            session.sendClientContent({
+              turns: [
+                {
+                  role: 'user',
+                  parts: [
+                    {
+                      text:
+                        '[SYSTEM] Voice session has just opened. Greet ' +
+                        (userName || 'the user') +
+                        ' now per your system instructions ("Assalamu Alaikum ...") and ask how you can help. Do not wait for them to speak first.',
+                    },
+                  ],
+                },
+              ],
+              turnComplete: true,
+            });
+            console.log('[live] greeting trigger sent');
+          } catch (e: any) {
+            console.warn('[live] greeting trigger failed:', e?.message ?? e);
+          }
         } catch (connectErr: any) {
           console.error('[live] connect failed:', connectErr?.message ?? connectErr);
           send({ type: 'error', error: `live_connect_failed: ${connectErr?.message ?? connectErr}` });
