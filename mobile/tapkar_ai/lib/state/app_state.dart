@@ -1,12 +1,32 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/types.dart' show ChatMessage, TraceStep, BookingResult, ScheduledJob, ProviderOption;
 import '../services/api.dart';
 import '../services/notifications.dart';
 import '../services/user_api.dart';
 import 'auth_state.dart';
+
+/// One entry in the cross-screen unread-chat list. Powers the Inbox tab
+/// + the cross-screen notification poller.
+class ChatThreadSummary {
+  final String bookingId;
+  final String? counterpartName;
+  final String? lastMessageText;
+  final String? lastMessageFrom;
+  final String? lastMessageTs;
+  final int unreadCount;
+  const ChatThreadSummary({
+    required this.bookingId,
+    this.counterpartName,
+    this.lastMessageText,
+    this.lastMessageFrom,
+    this.lastMessageTs,
+    this.unreadCount = 0,
+  });
+}
 
 enum RunStatus { idle, running, complete, failed }
 
@@ -24,6 +44,109 @@ class AppState extends ChangeNotifier {
     // Restore chat history from disk so a force-close doesn't lose the
     // conversation. Fire-and-forget — UI will rebuild via notifyListeners.
     _restoreFromDisk();
+    _startGlobalMessagePoll();
+  }
+
+  /// Cached chat threads (one entry per booking that has messages).
+  /// Refreshed by the global poller; consumed by InboxScreen.
+  List<ChatThreadSummary> chatThreads = const [];
+  /// Last-seen message id per booking — when a newer one appears in the
+  /// poll and it's from the OTHER party, fires a notification AND bumps
+  /// the unread counter that the inbox shows.
+  final Map<String, String> _lastSeenChatIdByBooking = {};
+  final Map<String, int> _unreadCountByBooking = {};
+
+  /// Mark a booking's chat as read (called from BookingChatScreen so the
+  /// inbox badge disappears when the user opens the thread).
+  void markChatRead(String bookingId) {
+    if (_unreadCountByBooking.remove(bookingId) != null) {
+      // Update the in-memory thread list so the inbox redraws without
+      // waiting for the next 5s poll tick.
+      chatThreads = chatThreads
+          .map((t) => t.bookingId == bookingId
+              ? ChatThreadSummary(
+                  bookingId: t.bookingId,
+                  counterpartName: t.counterpartName,
+                  lastMessageText: t.lastMessageText,
+                  lastMessageFrom: t.lastMessageFrom,
+                  lastMessageTs: t.lastMessageTs,
+                  unreadCount: 0,
+                )
+              : t)
+          .toList();
+      notifyListeners();
+    }
+  }
+
+  Timer? _messagePollTimer;
+  /// Polls user's bookings + per-booking messages every 5 s so chat
+  /// notifications fire on ANY screen, not just Inbox/Bookings. Also
+  /// powers the inbox thread list.
+  void _startGlobalMessagePoll() {
+    _messagePollTimer?.cancel();
+    _messagePollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _pollChatThreads();
+    });
+    // Kick once immediately so the inbox isn't empty on app open.
+    Future.microtask(_pollChatThreads);
+  }
+
+  static const _apiUrl = String.fromEnvironment(
+    'API_URL',
+    defaultValue: 'https://tapkar-ai-backend-d56rhra4sa-uc.a.run.app',
+  );
+
+  Future<void> _pollChatThreads() async {
+    final uid = auth.userId;
+    if (uid.isEmpty) return;
+    try {
+      final bookings = await _userApi.myBookings(uid);
+      final threadsForInbox = <ChatThreadSummary>[];
+      for (final b in bookings) {
+        final id = b['id'] as String?;
+        if (id == null) continue;
+        try {
+          final r = await http.get(Uri.parse('$_apiUrl/bookings/$id/messages'))
+              .timeout(const Duration(seconds: 4));
+          if (r.statusCode != 200) continue;
+          final data = jsonDecode(r.body) as Map<String, dynamic>;
+          final msgs = (data['messages'] as List?)
+                  ?.whereType<Map<String, dynamic>>()
+                  .toList() ??
+              const <Map<String, dynamic>>[];
+          if (msgs.isEmpty) continue;
+          final latest = msgs.last;
+          final latestId = latest['id'] as String?;
+          if (latestId == null) continue;
+          final previous = _lastSeenChatIdByBooking[id];
+          _lastSeenChatIdByBooking[id] = latestId;
+          // Fire notification + bump unread when the OTHER party (provider)
+          // sent something new. Skip on first hydration.
+          if (previous != null && previous != latestId && latest['from'] == 'provider') {
+            final providerName = (b['provider_name'] as String?) ?? 'provider';
+            final preview = (latest['text'] as String?) ?? '';
+            Notifications.instance.chatMessage(
+              fromLabel: providerName.split(' ').first,
+              preview: preview,
+            );
+            _unreadCountByBooking[id] = (_unreadCountByBooking[id] ?? 0) + 1;
+          }
+          threadsForInbox.add(ChatThreadSummary(
+            bookingId: id,
+            counterpartName: b['provider_name'] as String?,
+            lastMessageText: latest['text'] as String?,
+            lastMessageFrom: latest['from'] as String?,
+            lastMessageTs: latest['ts'] as String?,
+            unreadCount: _unreadCountByBooking[id] ?? 0,
+          ));
+        } catch (_) {/* per-booking transient */}
+      }
+      // Newest first.
+      threadsForInbox.sort((a, b) =>
+          (b.lastMessageTs ?? '').compareTo(a.lastMessageTs ?? ''));
+      chatThreads = threadsForInbox;
+      notifyListeners();
+    } catch (_) {/* whole poll transient */}
   }
 
   static const _kMessagesKey = 'chat.messages';

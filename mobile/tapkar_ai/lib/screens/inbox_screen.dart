@@ -4,6 +4,7 @@ import '../i18n.dart';
 import '../services/user_api.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import 'booking_chat_screen.dart';
 
 /// Inbox — combines notifications (sent) + scheduled reminders (upcoming).
 class InboxScreen extends StatefulWidget {
@@ -68,7 +69,15 @@ class _InboxScreenState extends State<InboxScreen> {
                   onPressed: _load),
             ],
           ),
-          body: SafeArea(child: _body(t)),
+          // AnimatedBuilder on AppState (not just auth) so the inbox
+          // re-renders the moment the global chat-thread poller updates
+          // widget.state.chatThreads.
+          body: SafeArea(
+            child: AnimatedBuilder(
+              animation: widget.state,
+              builder: (_, __) => _body(t),
+            ),
+          ),
         );
       },
     );
@@ -94,7 +103,8 @@ class _InboxScreenState extends State<InboxScreen> {
         ])),
       );
     }
-    if (_messages.isEmpty && _scheduled.isEmpty) {
+    final threads = widget.state.chatThreads;
+    if (_messages.isEmpty && _scheduled.isEmpty && threads.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(28),
@@ -120,13 +130,21 @@ class _InboxScreenState extends State<InboxScreen> {
       child: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
+          if (threads.isNotEmpty) ...[
+            _sectionLabel('Chats · ${threads.length}'),
+            ...threads.map((th) => _ChatThreadRow(
+                  thread: th,
+                  state: widget.state,
+                )),
+            const SizedBox(height: 8),
+          ],
           if (_scheduled.isNotEmpty) ...[
             _sectionLabel('Upcoming reminders · ${_scheduled.length}'),
             ..._scheduled.map((s) => _ScheduledRow(job: s)),
             const SizedBox(height: 8),
           ],
           if (_messages.isNotEmpty) ...[
-            _sectionLabel('Messages · ${_messages.length}'),
+            _sectionLabel('Notifications · ${_messages.length}'),
             ..._messages.map((m) => _MessageRow(msg: m)),
           ],
           const SizedBox(height: 24),
@@ -140,6 +158,99 @@ class _InboxScreenState extends State<InboxScreen> {
         child: Text(text.toUpperCase(),
             style: AppFonts.mono(size: 10, color: Colors.white54).copyWith(letterSpacing: 1.4)),
       );
+}
+
+class _ChatThreadRow extends StatelessWidget {
+  final ChatThreadSummary thread;
+  final AppState state;
+  const _ChatThreadRow({required this.thread, required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final name = thread.counterpartName ?? 'Provider';
+    final preview = thread.lastMessageText ?? '';
+    final fromMe = thread.lastMessageFrom == 'user';
+    final ts = thread.lastMessageTs;
+    final tsLabel = (ts != null && ts.length >= 16) ? ts.substring(11, 16) : '';
+    final hasUnread = thread.unreadCount > 0;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () async {
+          await Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => BookingChatScreen(
+              bookingId: thread.bookingId,
+              myRole: 'user',
+              mySenderId: state.userId,
+              counterpartName: thread.counterpartName,
+            ),
+          ));
+          state.markChatRead(thread.bookingId);
+        },
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: hasUnread
+                ? AppColors.violet.withOpacity(0.55)
+                : AppColors.border),
+          ),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: AppColors.violet.withOpacity(0.2),
+              child: const Icon(Icons.chat_bubble_outline_rounded,
+                  color: AppColors.violet, size: 18),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Expanded(
+                    child: Text(name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppFonts.base(
+                            size: 14,
+                            weight: hasUnread ? FontWeight.w800 : FontWeight.w600)),
+                  ),
+                  if (tsLabel.isNotEmpty)
+                    Text(tsLabel,
+                        style: AppFonts.mono(size: 10, color: Colors.white54)),
+                ]),
+                const SizedBox(height: 3),
+                Text(
+                  fromMe ? 'You: $preview' : preview,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppFonts.base(
+                    size: 12,
+                    color: hasUnread ? Colors.white : Colors.white60,
+                    weight: hasUnread ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ]),
+            ),
+            if (hasUnread) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.violet,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text('${thread.unreadCount}',
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
+              ),
+            ],
+          ]),
+        ),
+      ),
+    );
+  }
 }
 
 class _ScheduledRow extends StatelessWidget {

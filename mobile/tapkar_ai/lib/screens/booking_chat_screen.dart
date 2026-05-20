@@ -113,10 +113,14 @@ class _BookingChatScreenState extends State<BookingChatScreen> {
         _input.clear();
         await _load(); // grab the persisted version (includes ts)
       } else {
-        _toast('Failed to send (${r.statusCode})');
+        // Surface the actual error so silent failures aren't a mystery.
+        // 400 = bad sender_id / empty text; 403 = not a party to this
+        // booking; 404 = booking gone; 500 = persist failure.
+        final body = r.body.length > 200 ? r.body.substring(0, 200) : r.body;
+        _toast('Send failed (${r.statusCode}): $body');
       }
     } catch (e) {
-      _toast('Network error');
+      _toast('Network error: $e');
     } finally {
       if (mounted) setState(() => _sending = false);
     }

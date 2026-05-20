@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '../i18n.dart';
 import '../services/notifications.dart';
 import '../services/provider_api.dart';
@@ -231,6 +233,11 @@ class _ProviderJobsTabState extends State<_ProviderJobsTab> {
   /// a brand-new booking lands.
   Timer? _pollTimer;
   Set<String> _knownBookingIds = const {};
+  /// Map of bookingId → last-seen-chat-message-id. After each booking
+  /// poll we fetch /bookings/:id/messages for each active job and look
+  /// for entries newer than what's here. Any new message from='user'
+  /// fires a notification.
+  final Map<String, String> _lastSeenMsgIdByBooking = {};
 
   @override
   void initState() {
@@ -314,6 +321,10 @@ class _ProviderJobsTabState extends State<_ProviderJobsTab> {
           _loading = false;
         });
       }
+      // Background chat-poll: for each active booking, check for new
+      // messages from the customer. Skips terminal states (cancelled /
+      // completed) to keep request count bounded.
+      _pollMessagesForBookings(bookings);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -321,6 +332,44 @@ class _ProviderJobsTabState extends State<_ProviderJobsTab> {
           _loading = false;
         });
       }
+    }
+  }
+
+  Future<void> _pollMessagesForBookings(List<Map<String, dynamic>> bookings) async {
+    const apiUrl = String.fromEnvironment(
+      'API_URL',
+      defaultValue: 'https://tapkar-ai-backend-d56rhra4sa-uc.a.run.app',
+    );
+    for (final b in bookings) {
+      final id = b['id'] as String?;
+      if (id == null) continue;
+      final st = (b['status'] as String?) ?? '';
+      if (st == 'cancelled' || st == 'completed' || st == 'no_show') continue;
+      try {
+        final r = await http.get(Uri.parse('$apiUrl/bookings/$id/messages'))
+            .timeout(const Duration(seconds: 5));
+        if (r.statusCode != 200) continue;
+        final data = jsonDecode(r.body) as Map<String, dynamic>;
+        final msgs = (data['messages'] as List?)
+                ?.whereType<Map<String, dynamic>>()
+                .toList() ??
+            const <Map<String, dynamic>>[];
+        if (msgs.isEmpty) continue;
+        final latest = msgs.last;
+        final latestId = latest['id'] as String?;
+        if (latestId == null) continue;
+        final previous = _lastSeenMsgIdByBooking[id];
+        _lastSeenMsgIdByBooking[id] = latestId;
+        // First observation = hydrate, don't notify (old history would
+        // ping a flood on app open).
+        if (previous == null) continue;
+        if (latestId == previous) continue;
+        if (latest['from'] != 'user') continue; // ignore our own messages
+        Notifications.instance.chatMessage(
+          fromLabel: 'customer',
+          preview: (latest['text'] as String?) ?? '',
+        );
+      } catch (_) {/* transient — try again next tick */}
     }
   }
 
@@ -472,7 +521,11 @@ class _ProviderJobsTabState extends State<_ProviderJobsTab> {
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 12),
         itemCount: _bookings.length,
-        itemBuilder: (_, i) => _BookingCard(booking: _bookings[i], onAction: _act),
+        itemBuilder: (_, i) => _BookingCard(
+          booking: _bookings[i],
+          onAction: _act,
+          providerOwnerId: widget.auth.providerId,
+        ),
       ),
     );
   }
@@ -1177,8 +1230,16 @@ class _ProviderProfileTabState extends State<_ProviderProfileTab> {
 class _BookingCard extends StatelessWidget {
   final Map<String, dynamic> booking;
   final Future<void> Function(String bookingId, String action) onAction;
+  /// Provider's own id from AuthState — fallback for the chat button
+  /// when the booking record didn't include a provider_id (rare, but
+  /// the chat POST schema rejects empty sender_id).
+  final String? providerOwnerId;
 
-  const _BookingCard({required this.booking, required this.onAction});
+  const _BookingCard({
+    required this.booking,
+    required this.onAction,
+    this.providerOwnerId,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1247,17 +1308,27 @@ class _BookingCard extends StatelessWidget {
           ],
           const SizedBox(height: 10),
           _actionRow(status, id),
-          // Chat with the customer about this specific booking.
+          // Chat with the customer about this specific booking. Prefer
+          // the provider_id baked into the booking, fall back to the
+          // logged-in provider's own id (passed from the Jobs tab).
           const SizedBox(height: 6),
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
               onPressed: () {
+                final pid =
+                    (booking['provider_id'] as String?) ?? providerOwnerId ?? '';
+                if (pid.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Provider id unavailable — try refreshing')),
+                  );
+                  return;
+                }
                 Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) => BookingChatScreen(
                     bookingId: id,
                     myRole: 'provider',
-                    mySenderId: booking['provider_id'] as String? ?? '',
+                    mySenderId: pid,
                     counterpartName: 'Customer',
                   ),
                 ));

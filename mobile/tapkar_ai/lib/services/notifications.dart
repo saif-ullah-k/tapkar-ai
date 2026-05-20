@@ -110,4 +110,17 @@ class Notifications {
           : 'You have a new $readable booking request',
     );
   }
+
+  /// Either side: fires when the other party messages you about a booking.
+  /// Polling code in Jobs/Bookings tabs calls this when it spots a
+  /// message id that wasn't seen before.
+  Future<void> chatMessage({
+    required String fromLabel,
+    required String preview,
+  }) async {
+    await _show(
+      'New message from $fromLabel',
+      preview.length > 80 ? preview.substring(0, 80) + '…' : preview,
+    );
+  }
 }

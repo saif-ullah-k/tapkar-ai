@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '../i18n.dart';
+import '../services/notifications.dart';
 import '../services/user_api.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
@@ -23,6 +26,10 @@ class _BookingsScreenState extends State<BookingsScreen> {
   bool _loading = true;
   String? _error;
   Timer? _refreshTimer;
+  /// Track latest message id per booking so we can fire a notification
+  /// when a provider sends something new while the customer is on this
+  /// screen but not inside the chat.
+  final Map<String, String> _lastSeenMsgIdByBooking = {};
 
   @override
   void initState() {
@@ -56,6 +63,8 @@ class _BookingsScreenState extends State<BookingsScreen> {
         _bookings = bookings;
         _loading = false;
       });
+      // Notify on new provider-side messages.
+      _pollMessagesForBookings(bookings);
     } catch (e) {
       if (!mounted) return;
       if (silent) return; // swallow background refresh errors
@@ -63,6 +72,43 @@ class _BookingsScreenState extends State<BookingsScreen> {
         _error = e.toString();
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _pollMessagesForBookings(List<Map<String, dynamic>> bookings) async {
+    const apiUrl = String.fromEnvironment(
+      'API_URL',
+      defaultValue: 'https://tapkar-ai-backend-d56rhra4sa-uc.a.run.app',
+    );
+    for (final b in bookings) {
+      final id = b['id'] as String?;
+      if (id == null) continue;
+      final st = (b['status'] as String?) ?? '';
+      if (st == 'cancelled' || st == 'completed' || st == 'no_show') continue;
+      try {
+        final r = await http.get(Uri.parse('$apiUrl/bookings/$id/messages'))
+            .timeout(const Duration(seconds: 5));
+        if (r.statusCode != 200) continue;
+        final data = jsonDecode(r.body) as Map<String, dynamic>;
+        final msgs = (data['messages'] as List?)
+                ?.whereType<Map<String, dynamic>>()
+                .toList() ??
+            const <Map<String, dynamic>>[];
+        if (msgs.isEmpty) continue;
+        final latest = msgs.last;
+        final latestId = latest['id'] as String?;
+        if (latestId == null) continue;
+        final previous = _lastSeenMsgIdByBooking[id];
+        _lastSeenMsgIdByBooking[id] = latestId;
+        if (previous == null) continue;
+        if (latestId == previous) continue;
+        if (latest['from'] != 'provider') continue;
+        final providerName = (b['provider_name'] as String?) ?? 'provider';
+        Notifications.instance.chatMessage(
+          fromLabel: providerName.split(' ').first,
+          preview: (latest['text'] as String?) ?? '',
+        );
+      } catch (_) {/* transient */}
     }
   }
 
@@ -275,8 +321,8 @@ class _BookingCard extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).push(MaterialPageRoute(
+                onPressed: () async {
+                  await Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => BookingChatScreen(
                       bookingId: id,
                       myRole: 'user',
@@ -284,6 +330,7 @@ class _BookingCard extends StatelessWidget {
                       counterpartName: providerName,
                     ),
                   ));
+                  state.markChatRead(id);
                 },
                 icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
                 label: Text('Chat with ${providerName.split(' ').first}'),
