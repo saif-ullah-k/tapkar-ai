@@ -140,6 +140,46 @@ const BOOKING_TOOL = {
 //  PROVIDER MODE — system prompt + tools for service-provider profile mgmt
 // ───────────────────────────────────────────────────────────────────────────
 
+/** Signup flow — used when the provider has no profile yet. The agent
+ *  walks through name → category → neighborhood → phone → price range →
+ *  weekly hours one (or two) at a time, calling update_provider_profile
+ *  as it goes. Backend creates the profile on the first call and patches
+ *  it on every subsequent one. */
+const PROVIDER_SIGNUP_PROMPT = `Tum TapKar AI ho — Karachi ka helpful insan jo naye service providers (plumber, AC wala, tutor, beautician, mehndi artist, etc.) ko TapKar pe register hone mein madad karta hai.
+
+YEH SIGNUP HAI. User ka profile ABHI NAHI bana. Tumhe step-by-step info collect karke profile create karna hai.
+
+PERSONALITY (Karachi friend, not bot):
+- "Assalamu Alaikum", "haan ji", "achha", "OK", "theek hai", "ek second".
+- Choti baat. 1-2 sentence at a time. Long paragraphs NEVER.
+- User ki language match karo: Urdu / Roman Urdu / English.
+- Empathy real — "achha new register hona hai? Bohot achhi baat hai, abhi help karta hoon" — phir kaam pe aao.
+- Filler natural — "ek minute", "thoda batayein", "achha to".
+
+SIGNUP FLOW — ONE field at a time. Sequence:
+   1. Naam — "aap ka business ya naam kya hai?" (call update_provider_profile { name })
+   2. Category — "kya kaam karte ho? plumber, electrician, AC wala, tutor, etc?" (call update_provider_profile { category })
+   3. Area / neighborhood — "Karachi mein kis area mein kaam karte ho? Gulshan? DHA? Clifton?" (call update_provider_profile { neighborhood })
+   4. Phone — "phone number bata dein customers ke liye?" (call update_provider_profile { phone })
+   5. Price range — "kitna charge karte ho usually? Like 1500-4000 PKR?" (call update_provider_profile { price_min_pkr, price_max_pkr })
+   6. Weekly hours — "kab kab available rehte ho hafte mein? Daily same hours ya alag alag?" (call update_provider_profile { availability: { monday: ["09:00-18:00"], ... } })
+
+KEY RULES:
+- PEHLE 1-2 word bolo, phir tool call karo. "Achha [name] save kar diya..." se start karo.
+- Tool call ke baad CONFIRM: "OK ji, naam [X] save ho gaya. Achha ab batayein kya kaam karte ho?"
+- Don't ask multiple things at once. ONE field, wait for answer, save, move to next.
+- Agar user kuch ambiguous bole (e.g. "subah se shaam tak"), clarify time before calling tool.
+- After step 6, say "Ho gaya! Aap ka profile ready hai. Ab customers aap ko dekh sakte hain. Aur kuch chahiye? Off-day mark karna ho ya kuch change karna ho to bolein."
+
+WHAT YOU CAN DO:
+1. **update_provider_profile** — Use this for EVERY field collection step above. Backend will create the profile on first call (you give name + category) and patch it on every subsequent call.
+2. **set_availability_override** — For date-specific things ("kal off", "Friday 25 ko nahi"). Probably not needed during signup, but available if user mentions it.
+
+CRITICAL:
+- "kal" = tomorrow (resolve to YYYY-MM-DD with today's date).
+- NEVER skip steps. NEVER ask all fields at once.
+- NEVER pretend to save without calling the tool.`;
+
 const PROVIDER_SYSTEM_PROMPT = `Tum TapKar AI ho — service providers (plumber, AC wala, tutor, beautician, etc.) ko apna profile manage karne mein help karte ho. Tum customer ki tarah unke liye bookings nahi karte — yeh provider hain, unke profile/availability/prices update karne hain.
 
 PERSONALITY (Karachi friend, not bot):
@@ -611,7 +651,30 @@ export function attachLiveVoice(server: HttpServer): void {
           const [_y, _m, _d] = todayPK.split('-').map((s) => parseInt(s, 10));
           const _tomorrow = new Date(Date.UTC(_y, _m - 1, _d + 1)).toISOString().slice(0, 10);
 
-          const baseSystemPrompt = mode === 'provider' ? PROVIDER_SYSTEM_PROMPT : SYSTEM_PROMPT;
+          // For provider mode, check whether they already have a profile.
+          // No profile → use the signup walkthrough prompt that collects
+          // fields one at a time. Existing profile → use the regular
+          // profile-management prompt.
+          let isProviderSignup = false;
+          if (mode === 'provider') {
+            try {
+              const existingPid = await getProviderIdForUser(userId);
+              const existingProfile = existingPid
+                ? await getProviderFromFirestore(existingPid)
+                : null;
+              isProviderSignup = !existingProfile;
+              console.log(
+                `[live] provider mode: ${isProviderSignup ? 'SIGNUP' : 'EDIT'} (pid=${existingPid ?? 'none'})`,
+              );
+            } catch (e: any) {
+              console.warn('[live] provider profile lookup failed (defaulting to edit):', e?.message ?? e);
+            }
+          }
+
+          const baseSystemPrompt =
+            mode === 'provider'
+              ? (isProviderSignup ? PROVIDER_SIGNUP_PROMPT : PROVIDER_SYSTEM_PROMPT)
+              : SYSTEM_PROMPT;
 
           const personalSystemPrompt =
             baseSystemPrompt +
@@ -624,9 +687,13 @@ export function attachLiveVoice(server: HttpServer): void {
             `Mode: ${mode}\n` +
             `Today (Asia/Karachi): ${todayPK}. "kal" / "tomorrow" = ${_tomorrow}.\n` +
             (mode === 'provider'
-              ? (userName
-                ? `When the session opens, your VERY FIRST utterance must be a warm greeting: "Assalamu Alaikum ${userName}! Apne profile mein kya update karna hai?" — don't wait for them to speak first.`
-                : `When the session opens, your VERY FIRST utterance must be: "Assalamu Alaikum! Profile update karne ke liye batayein kya chahiye." — don't wait.`)
+              ? (isProviderSignup
+                ? (userName
+                  ? `When the session opens, your VERY FIRST utterance must greet the new provider warmly: "Assalamu Alaikum ${userName}! Aap ka profile setup karne mein madad karta/karti hoon. Pehle batayein — aap ka business ya naam kya hai?" — start the signup flow immediately, don't wait for them to speak first.`
+                  : `When the session opens, your VERY FIRST utterance must be: "Assalamu Alaikum! TapKar pe register karne aaye hain? Pehle batayein, aap ka business ya naam kya hai?" — don't wait for the user to speak first.`)
+                : (userName
+                  ? `When the session opens, your VERY FIRST utterance must be a warm greeting: "Assalamu Alaikum ${userName}! Apne profile mein kya update karna hai?" — don't wait for them to speak first.`
+                  : `When the session opens, your VERY FIRST utterance must be: "Assalamu Alaikum! Profile update karne ke liye batayein kya chahiye." — don't wait.`))
               : (userName
                 ? `When the session opens, your VERY FIRST utterance must greet ${userName} by name: "Assalamu Alaikum ${userName}!" — warm, friendly, then ask how you can help ("kaisi madad chahiye?" / "kya kaam karwana hai aaj?"). Don't wait for the user to speak first.`
                 : `When the session opens, your VERY FIRST utterance must be: "Assalamu Alaikum! TapKar AI mein khush aamdeed. Kya kaam karwana hai aaj?" — don't wait for the user to speak first.`));

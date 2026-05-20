@@ -326,19 +326,6 @@ class _ProviderChatSetupScreenState extends State<ProviderChatSetupScreen> {
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
         actions: [
-          // Voice mode — opens the live Gemini agent in provider mode.
-          // Available in BOTH signup (mode='signup') and edit (mode='edit')
-          // so a new provider can voice-create their profile from scratch
-          // if they prefer talking to typing.
-          IconButton(
-            icon: const Icon(Icons.graphic_eq, size: 20, color: AppColors.violet),
-            tooltip: 'Voice mode',
-            onPressed: () {
-              Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => VoiceLiveScreen.forProvider(auth: widget.auth),
-              ));
-            },
-          ),
           IconButton(
             icon: Icon(_tts.muted ? Icons.volume_off : Icons.volume_up,
                 size: 18, color: Colors.white60),
@@ -350,6 +337,80 @@ class _ProviderChatSetupScreenState extends State<ProviderChatSetupScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            // Big "Voice mode" affordance — replaces the previous tiny
+            // AppBar mic icon. Opens the provider Live agent which can
+            // collect profile fields conversationally instead of the
+            // user typing them out.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+              child: InkWell(
+                onTap: () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => VoiceLiveScreen.forProvider(auth: widget.auth),
+                  ));
+                },
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [AppColors.violet, AppColors.booking],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(children: [
+                    Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.18),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.graphic_eq,
+                          color: Colors.white, size: 24),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _t({
+                              'en': widget.mode == 'edit'
+                                  ? 'Talk to AI'
+                                  : 'Voice signup',
+                              'ur': widget.mode == 'edit'
+                                  ? 'AI سے بات کریں'
+                                  : 'وائس سائن اپ',
+                              'roman_ur': widget.mode == 'edit'
+                                  ? 'AI se baat karein'
+                                  : 'Voice se signup karein',
+                            }),
+                            style: AppFonts.base(
+                                size: 16, weight: FontWeight.w700, color: Colors.white),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _t({
+                              'en': 'Skip typing — speak your details and AI sets it up.',
+                              'ur': 'لکھنے کے بجائے بولیں — AI خود پروفائل بنا دے گا۔',
+                              'roman_ur':
+                                  'Likhne ke bajaye bolein — AI khud profile bana dega.',
+                            }),
+                            style: AppFonts.base(
+                                size: 12,
+                                color: Colors.white.withOpacity(0.85)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right,
+                        color: Colors.white70, size: 22),
+                  ]),
+                ),
+              ),
+            ),
             // Real-time-save banner — only visible in EDIT mode so the user
             // knows their changes persist as they talk (no need to wait
             // for a Save button).
