@@ -325,6 +325,16 @@ export function attachLiveVoice(server: HttpServer): void {
               },
               onclose: (e: any) => {
                 console.log(`[live] session closed: code=${e?.code} reason=${e?.reason} wasClean=${e?.wasClean}`);
+                // Gemini Live sends a GoAway and then closes the session
+                // when the per-session duration cap is reached (~10 min by
+                // default for audio). Surface a specific error so the
+                // client can show "Session ended — tap to reconnect" rather
+                // than the generic "Voice unavailable".
+                const isSessionTimeout =
+                  e?.code === 1008 || /goaway|session durat/i.test(String(e?.reason ?? ''));
+                if (isSessionTimeout) {
+                  send({ type: 'error', error: 'session_timeout' });
+                }
                 closeAll('session_closed');
               },
             },

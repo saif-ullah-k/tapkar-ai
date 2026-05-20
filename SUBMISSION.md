@@ -7,12 +7,12 @@ Six mandatory deliverables. Track capture status here continuously — do not le
 
 | # | Deliverable | Status | Path / Link | Capture during |
 |---|---|---|---|---|
-| 1 | **Mobile App Link** | ⬜ Pending | (APK upload / Play Store internal / Firebase App Distribution link) | Day 3–4 |
-| 2 | **GitHub Repository** | ⬜ Pending | (public URL) | Continuous |
+| 1 | **Mobile App Link** | ✅ Done | https://github.com/saif-ullah-k/tapkar-ai/releases/tag/v0.1.1 (`app-release.apk`, 52.4 MB) | Day 3–4 |
+| 2 | **GitHub Repository** | ✅ Done | https://github.com/saif-ullah-k/tapkar-ai | Continuous |
 | 3 | **Demo video — solution walkthrough** (3–5 min) | ⬜ Pending | `recordings/final/demo-solution.mp4` | Day 4 |
 | 4 | **Video of Antigravity usage** (2–5 min) | ⬜ Pending | `recordings/final/antigravity-build.mp4` | **Daily clips → Day 4 edit** |
-| 5 | **README / Documentation** | 🟡 In progress | `README.md` + `docs/architecture.md` + `docs/work-plan.md` | Continuous |
-| 6 | **Antigravity Trace / Logs** | ⬜ Pending | `antigravity-artifacts/` | **Every Antigravity session** |
+| 5 | **README / Documentation** | ✅ Done | `README.md` + `docs/architecture.md` + `docs/work-plan.md` | Continuous |
+| 6 | **Antigravity Trace / Logs** | ✅ Done | `antigravity-artifacts/` (7 files, Days 1–4) | **Every Antigravity session** |
 
 ---
 

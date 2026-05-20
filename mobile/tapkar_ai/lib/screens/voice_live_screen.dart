@@ -173,7 +173,13 @@ class _VoiceLiveScreenState extends State<VoiceLiveScreen>
         _flushAudio();
         break;
       case 'error':
-        _setError(frame['error']?.toString() ?? 'unknown');
+        final err = frame['error']?.toString() ?? 'unknown';
+        // Live API enforces a per-session duration cap (~10 min for audio).
+        // When that fires we want a clear "tap to resume" message rather
+        // than the generic "Voice unavailable".
+        _setError(err == 'session_timeout'
+            ? 'Session ended — tap close, then voice again'
+            : err);
         break;
     }
   }

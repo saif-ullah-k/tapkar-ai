@@ -110,8 +110,11 @@ export async function endTraceInStore(
   try {
     const fs = await getFirestore();
     if (fs) {
+      // `result.booking_id` can legitimately be undefined when the pipeline
+      // ends in `awaiting_user_input`. stripUndefined() prevents the
+      // "Cannot use undefined as a Firestore value" rejection.
       await fs.doc(`traces/${runId}`).set(
-        { status: 'complete', ended_at: new Date().toISOString(), result },
+        stripUndefined({ status: 'complete', ended_at: new Date().toISOString(), result }),
         { merge: true }
       );
     }

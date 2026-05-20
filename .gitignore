@@ -87,6 +87,8 @@ mobile/tapkar_ai/build/app/outputs/flutter-apk/*.apk
 # Test screenshots from iterative dev sessions (junk)
 test-*.png
 screen-after-font-fix.png
+emu*.png
+ui.xml
 
 # Claude Code session data
 .claude/
