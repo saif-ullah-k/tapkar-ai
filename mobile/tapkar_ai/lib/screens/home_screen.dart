@@ -97,27 +97,17 @@ class HomeScreen extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
         child: Row(
           children: [
-            // Official wordmark — replaces the old gradient box + ⚡ emoji
-            // + "TapKar AI" text combo. The image already contains the
-            // orb + name, so we just leave the tagline on its own line.
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.asset(
-                    'assets/brand/logo-wordmark.png',
-                    height: 36,
-                    fit: BoxFit.contain,
-                    alignment: Alignment.centerLeft,
-                    filterQuality: FilterQuality.medium,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(t.appTagline,
-                      style: AppFonts.base(size: 11, color: Colors.white54)),
-                ],
-              ),
+            // Official square logo — orb + wordmark + tagline already
+            // baked in, so we drop it in as a single asset with no
+            // surrounding chrome. Tagline below is redundant; the logo
+            // image already shows it.
+            Image.asset(
+              'assets/brand/logo-square.png',
+              height: 56,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.medium,
             ),
+            const Spacer(),
             IconButton(
               icon: const Icon(Icons.notifications_none_rounded, color: Colors.white60),
               onPressed: () => onJumpToTab(3),
