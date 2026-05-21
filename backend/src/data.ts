@@ -226,3 +226,43 @@ export function resetDataCache(): void {
   _userIdToProviderId.clear();
   _firestoreHydrated = false;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Delete a provider from memory + Firestore (Admin). */
+export async function deleteProviderAdmin(id: string): Promise<boolean> {
+  const all = loadProviders();
+  const idx = all.findIndex((p) => p.id === id);
+  let removed = false;
+  
+  if (idx >= 0) {
+    // Also remove from user mapping if present
+    for (const [uid, pid] of _userIdToProviderId.entries()) {
+      if (pid === id) {
+        _userIdToProviderId.delete(uid);
+      }
+    }
+    all.splice(idx, 1);
+    removed = true;
+  }
+  
+  try {
+    const fs = await getFirestore();
+    if (fs) {
+      await fs.doc(`providers/${id}`).delete();
+      // Try to clean up user_providers mappings as well
+      const upSnap = await fs.collection('user_providers').where('provider_id', '==', id).get();
+      const batch = fs.batch();
+      upSnap.forEach((doc: any) => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+    }
+  } catch (e: any) {
+    console.warn('[data] deleteProviderAdmin Firestore delete failed (ignored):', e?.message ?? e);
+  }
+  
+  return removed;
+}

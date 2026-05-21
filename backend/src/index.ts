@@ -27,8 +27,14 @@ import {
   listBookingsForUser,
   listInboxForUser,
   listScheduledForUser,
+  listAllBookingsAdmin,
+  deleteBookingFromStore,
+  listAllUsersAdmin,
+  updateUserAdmin,
+  deleteUserAdmin,
+  trackUserInMemory,
 } from './store.js';
-import { loadProviders, addProvider, getProviderIdForUser, hydrateProvidersFromFirestore } from './data.js';
+import { loadProviders, addProvider, getProviderIdForUser, hydrateProvidersFromFirestore, deleteProviderAdmin } from './data.js';
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -81,6 +87,11 @@ const RunBodySchema = z.object({
   /** User's gender. Bot adopts matching grammatical gender when replying in
    *  Urdu / Roman Urdu (verbs like "kar rahi hoon" vs "kar raha hoon"). */
   user_gender: z.enum(['female', 'male', 'other']).optional(),
+  /** Display name from Firebase Auth — stored server-side so admin
+   *  dashboard can show real names instead of bare UIDs. */
+  user_name: z.string().optional(),
+  /** Phone collected at Firebase signup. */
+  user_phone: z.string().optional(),
 });
 
 app.post('/run', async (req: Request, res: Response) => {
@@ -90,6 +101,15 @@ app.post('/run', async (req: Request, res: Response) => {
     console.log(`[run] body validation failed:`, parsed.error.flatten());
     return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
   }
+
+  // Track the user in memory so they appear in the Admin Dashboard. We
+  // also pass through any name/phone the mobile sent — admin tables show
+  // real names instead of UIDs once at least one /run has fired.
+  trackUserInMemory(parsed.data.user_id, {
+    ...(parsed.data.user_name ? { name: parsed.data.user_name } : {}),
+    ...(parsed.data.user_phone ? { phone: parsed.data.user_phone } : {}),
+  });
+
   console.log(`[run] user_input: "${parsed.data.user_input.slice(0, 80)}"`);
 
   if (!config.gemini.useVertex && !config.gemini.apiKey) {
@@ -560,6 +580,10 @@ app.post('/providers/register', async (req, res) => {
     return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
   }
   const d = parsed.data;
+  
+  // Track the user making the registration with their name + phone so the
+  // admin dashboard can show "Saifullah" not "p_user_NXLhM2h2".
+  trackUserInMemory(d.user_id, { name: d.name, phone: d.phone });
   // Derive lat/lng from neighborhood if not provided
   let lat = d.lat;
   let lng = d.lng;
@@ -858,6 +882,159 @@ app.post('/providers/:provider_id/bookings/:booking_id/action', async (req, res)
       : 'cancelled';
   await updateBookingStatusInStore(booking.id, newStatus as any);
   res.json({ ok: true, booking_id: booking.id, status: newStatus });
+});
+
+// ─── Admin Dashboard & API ───────────────────────────────────────────────────
+
+// Default secret for dev, override with ADMIN_SECRET env var in production
+const ADMIN_SECRET = process.env.ADMIN_SECRET || 'tapkar-admin-123';
+
+const adminAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const auth = req.headers.authorization;
+  if (!auth || auth !== `Bearer ${ADMIN_SECRET}`) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  // Admin tables must always show fresh data. Without this, Express's
+  // default ETag handling turns repeat requests into 304 Not Modified
+  // responses with no body — the dashboard's apiFetch wrapper then
+  // treats !res.ok as a failure, silently empties the table, and the
+  // user sees blank rows with no console error.
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+};
+
+// Ensure we resolve the path correctly (index.js is in dist/, admin.html is in src/ or dist/)
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+// Using process.cwd() instead of import.meta.url works fine since we execute from backend/
+app.get('/admin/dashboard', (req, res) => {
+  res.sendFile(join(process.cwd(), 'src', 'admin.html'));
+});
+
+// Brand logo — served as a static asset so the dashboard can use it
+// without baking the file into the HTML. Cached aggressively because the
+// logo never changes between deploys. We try a few candidate locations
+// (repo-root /branding in dev, /app/branding in the Cloud Run image)
+// and 404 only when none exist.
+import { existsSync, readFileSync } from 'fs';
+import { resolve as resolvePath } from 'path';
+const brandingCandidates = [
+  resolvePath(process.cwd(), '..', 'branding'),  // backend/ cwd → repo-root/branding
+  resolvePath(process.cwd(), 'branding'),         // repo-root cwd
+  '/app/branding',                                // Cloud Run absolute
+];
+const brandingDir = brandingCandidates.find((p) => existsSync(p));
+console.log(`[admin] brandingDir resolved to: ${brandingDir ?? '(none found)'}`);
+function serveLogo(file: string) {
+  return (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    if (!brandingDir) return res.status(404).send('logo not found');
+    const full = resolvePath(brandingDir, file);
+    if (!existsSync(full)) return res.status(404).send('logo not found');
+    res.setHeader('Content-Type', 'image/png');
+    res.send(readFileSync(full));
+  };
+}
+app.get('/admin/assets/logo.png', serveLogo('logo-square.png'));
+app.get('/admin/assets/logo-wordmark.png', serveLogo('logo-wordmark.png'));
+
+app.get('/admin/api/stats', adminAuth, async (req, res) => {
+  const users = await listAllUsersAdmin();
+  const providers = loadProviders();
+  const bookings = await listAllBookingsAdmin();
+  const activeBookings = bookings.filter((b) => b.status !== 'completed' && b.status !== 'cancelled' && b.status !== 'no_show').length;
+  res.json({
+    total_users: users.length,
+    total_providers: providers.length,
+    total_bookings: bookings.length,
+    active_bookings: activeBookings,
+  });
+});
+
+app.get('/admin/api/users', adminAuth, async (req, res) => {
+  const users = await listAllUsersAdmin();
+  res.json({ users });
+});
+
+app.patch('/admin/api/users/:id', adminAuth, async (req, res) => {
+  await updateUserAdmin(req.params.id, req.body);
+  res.json({ ok: true });
+});
+
+app.delete('/admin/api/users/:id', adminAuth, async (req, res) => {
+  await deleteUserAdmin(req.params.id);
+  res.json({ ok: true });
+});
+
+app.post('/admin/api/users/:id/block', adminAuth, async (req, res) => {
+  await updateUserAdmin(req.params.id, { blocked: req.body.blocked });
+  res.json({ ok: true });
+});
+
+app.get('/admin/api/providers', adminAuth, (req, res) => {
+  res.json({ providers: loadProviders() });
+});
+
+app.patch('/admin/api/providers/:id', adminAuth, async (req, res) => {
+  const p = loadProviders().find(x => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'not_found' });
+  const updated = { ...p, ...req.body };
+  await addProvider(updated, p.id); // Hack: Using provider.id as ownerUserId for admin edits
+  res.json({ ok: true, provider: updated });
+});
+
+app.delete('/admin/api/providers/:id', adminAuth, async (req, res) => {
+  const removed = await deleteProviderAdmin(req.params.id);
+  res.json({ ok: removed });
+});
+
+app.post('/admin/api/providers/:id/block', adminAuth, async (req, res) => {
+  const p = loadProviders().find(x => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'not_found' });
+  const updated: any = { ...p, blocked: req.body.blocked };
+  await addProvider(updated, p.id);
+  res.json({ ok: true });
+});
+
+app.post('/admin/api/providers/:id/verify', adminAuth, async (req, res) => {
+  const p = loadProviders().find(x => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'not_found' });
+  const updated = { ...p, verified: req.body.verified };
+  await addProvider(updated, p.id);
+  res.json({ ok: true });
+});
+
+app.get('/admin/api/bookings', adminAuth, async (req, res) => {
+  const bookings = await listAllBookingsAdmin();
+  const providers = loadProviders();
+  // Join user names so the admin booking table can show real names
+  // instead of bare Firebase UIDs. listAllUsersAdmin aggregates mem
+  // tracking + Firestore + booking-derived users.
+  const users = await listAllUsersAdmin();
+  const userById = new Map<string, any>(users.map((u: any) => [u.id, u]));
+  const enriched = bookings.map(b => {
+    const p = providers.find(x => x.id === b.provider_id);
+    const u = userById.get(b.user_id);
+    return {
+      ...b,
+      user_name: u?.name ?? null,
+      user_phone: u?.phone ?? null,
+      provider_name: p?.name,
+      provider_phone: p?.phone,
+    };
+  });
+  res.json({ bookings: enriched });
+});
+
+app.patch('/admin/api/bookings/:id', adminAuth, async (req, res) => {
+  await updateBookingStatusInStore(req.params.id, req.body.status);
+  res.json({ ok: true });
+});
+
+app.delete('/admin/api/bookings/:id', adminAuth, async (req, res) => {
+  const removed = await deleteBookingFromStore(req.params.id);
+  res.json({ ok: removed });
 });
 
 // ─── Boot ────────────────────────────────────────────────────────────────────

@@ -244,10 +244,22 @@ async function impl_search_providers(args: {
     .map<ProviderCandidate>((p) => ({
       ...p,
       distance_km: Number(haversineKm(args.near, { lat: p.lat, lng: p.lng }).toFixed(2)),
-      source: 'mock',
+      // Real registered providers carry id "p_user_*" (created via /providers/register).
+      // Seed/mock providers use ids like "p_001". Tag the source so downstream
+      // ranking can prefer the real ones.
+      source: p.id.startsWith('p_user_') ? 'registered' : 'mock',
     }))
     .filter((p) => (p.distance_km ?? 0) <= args.radius_km)
-    .sort((a, b) => (a.distance_km ?? 0) - (b.distance_km ?? 0));
+    .sort((a, b) => {
+      // Registered providers ALWAYS rank above mock ones — they paid the
+      // signup tax, the platform should reward them with visibility. Within
+      // each group, fall back to distance asc so the closest real plumber
+      // is #1 and the closest mock plumber is #(N+1) where N = #registered.
+      const aReg = a.source === 'registered' ? 0 : 1;
+      const bReg = b.source === 'registered' ? 0 : 1;
+      if (aReg !== bReg) return aReg - bReg;
+      return (a.distance_km ?? 0) - (b.distance_km ?? 0);
+    });
 }
 
 async function impl_places_nearby_search(args: {

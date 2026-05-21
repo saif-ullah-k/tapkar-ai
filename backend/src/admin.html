@@ -1,0 +1,1714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TapKar AI — Admin Dashboard</title>
+  <meta name="description" content="Admin dashboard for managing TapKar AI users, service providers, and bookings." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    /* ─── Reset & Variables ───────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-deep: #0a0e17;
+      --bg-surface: #111827;
+      --bg-card: rgba(17, 24, 39, 0.65);
+      --bg-glass: rgba(255, 255, 255, 0.04);
+      --bg-glass-hover: rgba(255, 255, 255, 0.08);
+      --border-glass: rgba(255, 255, 255, 0.08);
+      --border-glass-strong: rgba(255, 255, 255, 0.15);
+      --accent: #10b981;
+      --accent-hover: #34d399;
+      --accent-glow: rgba(16, 185, 129, 0.25);
+      --accent-soft: rgba(16, 185, 129, 0.12);
+      --danger: #ef4444;
+      --danger-hover: #f87171;
+      --danger-soft: rgba(239, 68, 68, 0.12);
+      --warning: #f59e0b;
+      --warning-soft: rgba(245, 158, 11, 0.12);
+      --info: #3b82f6;
+      --info-soft: rgba(59, 130, 246, 0.12);
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --sidebar-w: 260px;
+      --sidebar-collapsed: 72px;
+      --topbar-h: 0px;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ─── Animated Background ────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: -1;
+      background:
+        radial-gradient(ellipse 80% 60% at 10% 20%, rgba(16,185,129,0.08), transparent),
+        radial-gradient(ellipse 60% 50% at 90% 80%, rgba(59,130,246,0.06), transparent),
+        radial-gradient(ellipse 50% 40% at 50% 50%, rgba(139,92,246,0.04), transparent);
+      animation: bgShift 20s ease-in-out infinite alternate;
+    }
+    @keyframes bgShift {
+      0% { opacity: 1; }
+      50% { opacity: 0.7; }
+      100% { opacity: 1; }
+    }
+
+    /* ─── Login Screen ───────────────────────────────────────────── */
+    #loginScreen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .login-box {
+      background: var(--bg-card);
+      backdrop-filter: blur(24px);
+      border: 1px solid var(--border-glass);
+      border-radius: 20px;
+      padding: 48px 40px;
+      width: 100%;
+      max-width: 420px;
+      text-align: center;
+      animation: fadeUp 0.6s ease-out;
+    }
+    .login-box .logo {
+      font-size: 48px;
+      margin-bottom: 8px;
+    }
+    .login-box .logo img {
+      width: 72px;
+      height: 72px;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 16px var(--accent-glow));
+    }
+    .login-box h1 {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      background: linear-gradient(135deg, var(--accent), #6ee7b7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .login-box p {
+      color: var(--text-secondary);
+      font-size: 14px;
+      margin-bottom: 28px;
+    }
+    .login-box input {
+      width: 100%;
+      padding: 14px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-glass-strong);
+      background: var(--bg-glass);
+      color: var(--text-primary);
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      transition: var(--transition);
+      margin-bottom: 16px;
+    }
+    .login-box input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .login-box button {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: var(--radius-sm);
+      background: linear-gradient(135deg, var(--accent), #059669);
+      color: white;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: var(--transition);
+      font-family: inherit;
+    }
+    .login-box button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 25px var(--accent-glow);
+    }
+    .login-error {
+      color: var(--danger);
+      font-size: 13px;
+      margin-top: 12px;
+      min-height: 20px;
+    }
+
+    /* ─── App Shell ──────────────────────────────────────────────── */
+    #appShell { display: none; min-height: 100vh; }
+    #appShell.active { display: flex; }
+
+    /* ─── Sidebar ────────────────────────────────────────────────── */
+    .sidebar {
+      position: fixed;
+      left: 0; top: 0; bottom: 0;
+      width: var(--sidebar-w);
+      background: var(--bg-card);
+      backdrop-filter: blur(24px);
+      border-right: 1px solid var(--border-glass);
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+      transition: width var(--transition);
+      overflow: hidden;
+    }
+    .sidebar.collapsed { width: var(--sidebar-collapsed); }
+    .sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 24px 20px 20px;
+      border-bottom: 1px solid var(--border-glass);
+      white-space: nowrap;
+      min-height: 73px;
+    }
+    .sidebar-brand .icon { font-size: 28px; flex-shrink: 0; }
+    .sidebar-brand .icon img {
+      width: 32px;
+      height: 32px;
+      object-fit: contain;
+      display: block;
+    }
+    .sidebar-brand .brand-text h2 {
+      font-size: 17px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), #6ee7b7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .sidebar-brand .brand-text span {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+    }
+    .sidebar.collapsed .brand-text { display: none; }
+
+    .sidebar-nav {
+      flex: 1;
+      padding: 16px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 500;
+      transition: var(--transition);
+      white-space: nowrap;
+      position: relative;
+      border: none;
+      background: none;
+      width: 100%;
+      text-align: left;
+      font-family: inherit;
+    }
+    .nav-item:hover {
+      background: var(--bg-glass-hover);
+      color: var(--text-primary);
+    }
+    .nav-item.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+    .nav-item.active::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 50%;
+      transform: translateY(-50%);
+      width: 3px;
+      height: 20px;
+      border-radius: 0 3px 3px 0;
+      background: var(--accent);
+    }
+    .nav-item .icon { font-size: 20px; flex-shrink: 0; width: 24px; text-align: center; }
+    .nav-item .label { overflow: hidden; }
+    .sidebar.collapsed .nav-item .label { display: none; }
+
+    .sidebar-toggle {
+      padding: 16px;
+      border-top: 1px solid var(--border-glass);
+      display: flex;
+      justify-content: center;
+    }
+    .sidebar-toggle button {
+      width: 36px; height: 36px;
+      border: 1px solid var(--border-glass-strong);
+      border-radius: 50%;
+      background: var(--bg-glass);
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      transition: var(--transition);
+    }
+    .sidebar-toggle button:hover {
+      background: var(--bg-glass-hover);
+      color: var(--text-primary);
+    }
+
+    /* ─── Main Content ───────────────────────────────────────────── */
+    .main {
+      margin-left: var(--sidebar-w);
+      flex: 1;
+      min-height: 100vh;
+      transition: margin-left var(--transition);
+      padding: 28px 32px;
+    }
+    .sidebar.collapsed ~ .main { margin-left: var(--sidebar-collapsed); }
+
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .page-header h1 {
+      font-size: 26px;
+      font-weight: 700;
+    }
+    .page-header .subtitle {
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    /* ─── Sections (toggled by nav) ──────────────────────────────── */
+    .section { display: none; animation: fadeUp 0.35s ease-out; }
+    .section.active { display: block; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ─── Stat Cards ─────────────────────────────────────────────── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px;
+      margin-bottom: 32px;
+    }
+    .stat-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius);
+      padding: 24px;
+      transition: var(--transition);
+      position: relative;
+      overflow: hidden;
+    }
+    .stat-card:hover {
+      border-color: var(--border-glass-strong);
+      transform: translateY(-2px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+    }
+    .stat-card::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+    }
+    .stat-card.emerald::after { background: linear-gradient(90deg, var(--accent), #6ee7b7); }
+    .stat-card.blue::after { background: linear-gradient(90deg, var(--info), #93c5fd); }
+    .stat-card.amber::after { background: linear-gradient(90deg, var(--warning), #fcd34d); }
+    .stat-card.rose::after { background: linear-gradient(90deg, var(--danger), #fca5a5); }
+
+    .stat-card .stat-icon {
+      width: 44px; height: 44px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      margin-bottom: 16px;
+    }
+    .stat-card.emerald .stat-icon { background: var(--accent-soft); }
+    .stat-card.blue .stat-icon { background: var(--info-soft); }
+    .stat-card.amber .stat-icon { background: var(--warning-soft); }
+    .stat-card.rose .stat-icon { background: var(--danger-soft); }
+
+    .stat-card .stat-value {
+      font-size: 32px;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+    .stat-card .stat-label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    /* ─── Data Table ─────────────────────────────────────────────── */
+    .table-wrapper {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .table-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-glass);
+      flex-wrap: wrap;
+    }
+    .table-toolbar .search-box {
+      flex: 1;
+      min-width: 200px;
+      position: relative;
+    }
+    .table-toolbar .search-box input {
+      width: 100%;
+      padding: 10px 14px 10px 38px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-glass);
+      background: var(--bg-glass);
+      color: var(--text-primary);
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: var(--transition);
+    }
+    .table-toolbar .search-box input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .table-toolbar .search-box::before {
+      content: '🔍';
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 14px;
+      pointer-events: none;
+    }
+    .filter-btn {
+      padding: 10px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-glass);
+      background: var(--bg-glass);
+      color: var(--text-secondary);
+      font-size: 13px;
+      cursor: pointer;
+      transition: var(--transition);
+      font-family: inherit;
+      white-space: nowrap;
+    }
+    .filter-btn:hover, .filter-btn.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: rgba(16,185,129,0.3);
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .data-table thead th {
+      padding: 14px 16px;
+      text-align: left;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border-glass);
+      white-space: nowrap;
+    }
+    .data-table tbody tr {
+      transition: var(--transition);
+    }
+    .data-table tbody tr:hover {
+      background: var(--bg-glass-hover);
+    }
+    .data-table tbody td {
+      padding: 14px 16px;
+      font-size: 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+      vertical-align: middle;
+    }
+    .data-table .user-cell {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .data-table .avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: var(--accent-soft);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+    .data-table .name { font-weight: 500; }
+    .data-table .sub { font-size: 12px; color: var(--text-muted); }
+
+    /* ─── Badges ──────────────────────────────────────────────────── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge.green { background: var(--accent-soft); color: var(--accent); }
+    .badge.red { background: var(--danger-soft); color: var(--danger); }
+    .badge.amber { background: var(--warning-soft); color: var(--warning); }
+    .badge.blue { background: var(--info-soft); color: var(--info); }
+    .badge.gray { background: rgba(100,116,139,0.15); color: var(--text-muted); }
+
+    /* ─── Action Buttons ─────────────────────────────────────────── */
+    .actions {
+      display: flex;
+      gap: 6px;
+    }
+    .act-btn {
+      width: 34px; height: 34px;
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-sm);
+      background: var(--bg-glass);
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      transition: var(--transition);
+    }
+    .act-btn:hover { background: var(--bg-glass-hover); color: var(--text-primary); }
+    .act-btn.danger:hover { background: var(--danger-soft); color: var(--danger); }
+    .act-btn.success:hover { background: var(--accent-soft); color: var(--accent); }
+
+    /* ─── Modal ───────────────────────────────────────────────────── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(4px);
+      z-index: 500;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-glass-strong);
+      border-radius: 16px;
+      width: 100%;
+      max-width: 520px;
+      max-height: 90vh;
+      overflow-y: auto;
+      animation: modalIn 0.3s ease-out;
+    }
+    @keyframes modalIn {
+      from { opacity: 0; transform: scale(0.95) translateY(10px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border-glass);
+    }
+    .modal-header h3 { font-size: 18px; font-weight: 600; }
+    .modal-close {
+      width: 32px; height: 32px;
+      border: none;
+      border-radius: 8px;
+      background: var(--bg-glass);
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: var(--transition);
+    }
+    .modal-close:hover { background: var(--danger-soft); color: var(--danger); }
+    .modal-body { padding: 24px; }
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding: 16px 24px;
+      border-top: 1px solid var(--border-glass);
+    }
+
+    .form-group { margin-bottom: 18px; }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+    .form-group input, .form-group select, .form-group textarea {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid var(--border-glass-strong);
+      border-radius: var(--radius-sm);
+      background: var(--bg-glass);
+      color: var(--text-primary);
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: var(--transition);
+    }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .form-group select { cursor: pointer; }
+    .form-group select option { background: var(--bg-surface); color: var(--text-primary); }
+
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: var(--transition);
+      font-family: inherit;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #059669);
+      color: white;
+    }
+    .btn-primary:hover { box-shadow: 0 6px 20px var(--accent-glow); transform: translateY(-1px); }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-danger:hover { background: var(--danger-hover); }
+    .btn-ghost {
+      background: var(--bg-glass);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-glass);
+    }
+    .btn-ghost:hover { background: var(--bg-glass-hover); color: var(--text-primary); }
+
+    /* ─── Toast ───────────────────────────────────────────────────── */
+    #toastContainer {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toast {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 20px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-glass-strong);
+      color: var(--text-primary);
+      font-size: 14px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+      animation: toastIn 0.35s ease-out;
+      min-width: 280px;
+      max-width: 420px;
+    }
+    .toast.success { border-left: 3px solid var(--accent); }
+    .toast.error { border-left: 3px solid var(--danger); }
+    .toast.info { border-left: 3px solid var(--info); }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateX(40px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .toast-out {
+      animation: toastOut 0.3s ease-in forwards;
+    }
+    @keyframes toastOut {
+      to { opacity: 0; transform: translateX(40px); }
+    }
+
+    /* ─── Empty State ────────────────────────────────────────────── */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-muted);
+    }
+    .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+    .empty-state h3 { font-size: 18px; color: var(--text-secondary); margin-bottom: 8px; }
+    .empty-state p { font-size: 14px; }
+
+    /* ─── Table pagination ───────────────────────────────────────── */
+    .table-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-top: 1px solid var(--border-glass);
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .table-footer .page-btns {
+      display: flex;
+      gap: 6px;
+    }
+    .table-footer .page-btn {
+      width: 32px; height: 32px;
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-sm);
+      background: var(--bg-glass);
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      transition: var(--transition);
+      font-family: inherit;
+    }
+    .table-footer .page-btn:hover { background: var(--bg-glass-hover); }
+    .table-footer .page-btn.active { background: var(--accent-soft); color: var(--accent); border-color: rgba(16,185,129,0.3); }
+    .table-footer .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .table-footer .pager {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .pager-btn {
+      min-width: 32px; height: 32px;
+      padding: 0 8px;
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-sm);
+      background: var(--bg-glass);
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 14px;
+      font-family: inherit;
+      transition: var(--transition);
+    }
+    .pager-btn:hover:not(:disabled) {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: rgba(16,185,129,0.3);
+    }
+    .pager-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .pager-size {
+      height: 32px;
+      padding: 0 8px;
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-sm);
+      background: var(--bg-glass);
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      margin-right: 4px;
+    }
+    .pager-info {
+      padding: 0 10px;
+      color: var(--text-secondary);
+      font-size: 12px;
+      min-width: 90px;
+      text-align: center;
+    }
+    .cell-name { font-weight: 600; color: var(--text-primary); font-size: 14px; }
+    .cell-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+    /* ─── Confirm Dialog ─────────────────────────────────────────── */
+    .confirm-body { text-align: center; padding: 8px 0 20px; }
+    .confirm-body .icon { font-size: 48px; margin-bottom: 12px; }
+    .confirm-body h3 { font-size: 18px; margin-bottom: 8px; }
+    .confirm-body p { color: var(--text-secondary); font-size: 14px; }
+
+    /* ─── Loading Spinner ────────────────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 20px; height: 20px;
+      border: 2px solid var(--border-glass);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-overlay {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 60px;
+      gap: 12px;
+      color: var(--text-secondary);
+      font-size: 14px;
+    }
+
+    /* ─── Responsive ─────────────────────────────────────────────── */
+    @media (max-width: 1024px) {
+      .sidebar { width: var(--sidebar-collapsed); }
+      .sidebar .brand-text, .sidebar .nav-item .label { display: none; }
+      .main { margin-left: var(--sidebar-collapsed); padding: 20px; }
+      .stats-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+    }
+    @media (max-width: 640px) {
+      .sidebar { width: 0; border: none; }
+      .main { margin-left: 0; padding: 16px; }
+      .page-header h1 { font-size: 20px; }
+      .table-toolbar { flex-direction: column; }
+      .data-table { font-size: 13px; }
+      .data-table thead th, .data-table tbody td { padding: 10px 8px; }
+      .stat-card { padding: 16px; }
+      .stat-card .stat-value { font-size: 24px; }
+      .mobile-menu-btn { display: flex !important; }
+    }
+    .mobile-menu-btn {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 40px; height: 40px;
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-sm);
+      background: var(--bg-glass);
+      color: var(--text-primary);
+      cursor: pointer;
+      font-size: 20px;
+    }
+
+    /* ─── Scrollbar ───────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+    /* ─── Detail panels (provider/user details) ──────────────────── */
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .detail-grid .full-width { grid-column: 1 / -1; }
+    .detail-item { margin-bottom: 4px; }
+    .detail-item label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; display: block; }
+    .detail-item .value { font-size: 14px; color: var(--text-primary); }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════ LOGIN SCREEN ═══════════════ -->
+<div id="loginScreen">
+  <div class="login-box">
+    <div class="logo"><img src="/admin/assets/logo.png" alt="TapKar AI" onerror="this.outerHTML='⚡'" /></div>
+    <h1>TapKar AI</h1>
+    <p>Admin Dashboard — Enter your admin key to continue</p>
+    <input type="password" id="adminKeyInput" placeholder="Admin secret key" autocomplete="off" />
+    <button id="loginBtn" onclick="doLogin()">Sign In</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+
+<!-- ═══════════════ APP SHELL ═══════════════ -->
+<div id="appShell">
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <span class="icon"><img src="/admin/assets/logo.png" alt="TapKar" onerror="this.outerHTML='⚡'" /></span>
+      <div class="brand-text">
+        <h2>TapKar AI</h2>
+        <span>Admin Panel</span>
+      </div>
+    </div>
+    <div class="sidebar-nav">
+      <button class="nav-item active" data-section="dashboard" onclick="switchSection('dashboard', this)">
+        <span class="icon">📊</span><span class="label">Dashboard</span>
+      </button>
+      <button class="nav-item" data-section="users" onclick="switchSection('users', this)">
+        <span class="icon">👤</span><span class="label">Users</span>
+      </button>
+      <button class="nav-item" data-section="providers" onclick="switchSection('providers', this)">
+        <span class="icon">🔧</span><span class="label">Service Providers</span>
+      </button>
+      <button class="nav-item" data-section="bookings" onclick="switchSection('bookings', this)">
+        <span class="icon">📋</span><span class="label">Bookings</span>
+      </button>
+    </div>
+    <div class="sidebar-toggle">
+      <button onclick="toggleSidebar()" title="Collapse sidebar">◀</button>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <div class="main" id="mainContent">
+
+    <!-- ─── Dashboard Section ───────────────── -->
+    <div class="section active" id="sec-dashboard">
+      <div class="page-header">
+        <div>
+          <h1>Dashboard Overview</h1>
+          <div class="subtitle">Welcome back, Admin. Here's what's happening.</div>
+        </div>
+        <button class="btn btn-ghost" onclick="refreshAll()">↻ Refresh</button>
+      </div>
+      <div class="stats-grid" id="statsGrid">
+        <div class="stat-card emerald">
+          <div class="stat-icon">👤</div>
+          <div class="stat-value" id="statUsers">—</div>
+          <div class="stat-label">Total Users</div>
+        </div>
+        <div class="stat-card blue">
+          <div class="stat-icon">🔧</div>
+          <div class="stat-value" id="statProviders">—</div>
+          <div class="stat-label">Service Providers</div>
+        </div>
+        <div class="stat-card amber">
+          <div class="stat-icon">📋</div>
+          <div class="stat-value" id="statBookings">—</div>
+          <div class="stat-label">Total Bookings</div>
+        </div>
+        <div class="stat-card rose">
+          <div class="stat-icon">✅</div>
+          <div class="stat-value" id="statActive">—</div>
+          <div class="stat-label">Active Bookings</div>
+        </div>
+      </div>
+
+      <!-- Recent Bookings on Dashboard -->
+      <div class="table-wrapper">
+        <div class="table-toolbar">
+          <h3 style="font-size:15px;font-weight:600;">Recent Bookings</h3>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table">
+            <thead><tr>
+              <th>ID</th><th>User</th><th>Provider</th><th>Service</th><th>Status</th><th>Created</th>
+            </tr></thead>
+            <tbody id="recentBookingsBody">
+              <tr><td colspan="6"><div class="loading-overlay"><div class="spinner"></div> Loading...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Users Section ───────────────────── -->
+    <div class="section" id="sec-users">
+      <div class="page-header">
+        <div>
+          <h1>Users Management</h1>
+          <div class="subtitle">Manage all registered users</div>
+        </div>
+      </div>
+      <div class="table-wrapper">
+        <div class="table-toolbar">
+          <div class="search-box">
+            <input type="text" id="userSearch" placeholder="Search users by name, ID, or phone..." oninput="filterUsers()" />
+          </div>
+          <button class="filter-btn active" onclick="filterUserStatus('all', this)">All</button>
+          <button class="filter-btn" onclick="filterUserStatus('active', this)">Active</button>
+          <button class="filter-btn" onclick="filterUserStatus('blocked', this)">Blocked</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table">
+            <thead><tr>
+              <th>User</th><th>Phone</th><th>Bookings</th><th>Status</th><th>Actions</th>
+            </tr></thead>
+            <tbody id="usersTableBody">
+              <tr><td colspan="5"><div class="loading-overlay"><div class="spinner"></div> Loading...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-footer" id="usersTableFooter"></div>
+      </div>
+    </div>
+
+    <!-- ─── Providers Section ───────────────── -->
+    <div class="section" id="sec-providers">
+      <div class="page-header">
+        <div>
+          <h1>Service Providers</h1>
+          <div class="subtitle">Manage all service providers</div>
+        </div>
+      </div>
+      <div class="table-wrapper">
+        <div class="table-toolbar">
+          <div class="search-box">
+            <input type="text" id="providerSearch" placeholder="Search providers by name, category, area..." oninput="filterProviders()" />
+          </div>
+          <button class="filter-btn active" onclick="filterProviderStatus('all', this)">All</button>
+          <button class="filter-btn" onclick="filterProviderStatus('verified', this)">Verified</button>
+          <button class="filter-btn" onclick="filterProviderStatus('unverified', this)">Unverified</button>
+          <button class="filter-btn" onclick="filterProviderStatus('blocked', this)">Blocked</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table">
+            <thead><tr>
+              <th>Provider</th><th>Category</th><th>Area</th><th>Rating</th><th>Verified</th><th>Status</th><th>Actions</th>
+            </tr></thead>
+            <tbody id="providersTableBody">
+              <tr><td colspan="7"><div class="loading-overlay"><div class="spinner"></div> Loading...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-footer" id="providersTableFooter"></div>
+      </div>
+    </div>
+
+    <!-- ─── Bookings Section ────────────────── -->
+    <div class="section" id="sec-bookings">
+      <div class="page-header">
+        <div>
+          <h1>Bookings</h1>
+          <div class="subtitle">View and manage all bookings</div>
+        </div>
+      </div>
+      <div class="table-wrapper">
+        <div class="table-toolbar">
+          <div class="search-box">
+            <input type="text" id="bookingSearch" placeholder="Search bookings by ID, user, provider..." oninput="filterBookings()" />
+          </div>
+          <button class="filter-btn active" onclick="filterBookingStatus('all', this)">All</button>
+          <button class="filter-btn" onclick="filterBookingStatus('requested', this)">Requested</button>
+          <button class="filter-btn" onclick="filterBookingStatus('confirmed', this)">Confirmed</button>
+          <button class="filter-btn" onclick="filterBookingStatus('completed', this)">Completed</button>
+          <button class="filter-btn" onclick="filterBookingStatus('cancelled', this)">Cancelled</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table">
+            <thead><tr>
+              <th>Booking ID</th><th>User</th><th>Provider</th><th>Service</th><th>Time</th><th>Status</th><th>Actions</th>
+            </tr></thead>
+            <tbody id="bookingsTableBody">
+              <tr><td colspan="7"><div class="loading-overlay"><div class="spinner"></div> Loading...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-footer" id="bookingsTableFooter"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════ MODAL ═══════════════ -->
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<!-- ═══════════════ TOASTS ═══════════════ -->
+<div id="toastContainer"></div>
+
+<script>
+// ═════════════════════════════════════════════════════════════════════════════
+// State
+// ═════════════════════════════════════════════════════════════════════════════
+const API = window.location.origin;
+let AUTH_TOKEN = '';
+let allUsers = [];
+let allProviders = [];
+let allBookings = [];
+let currentUserFilter = 'all';
+let currentProviderFilter = 'all';
+let currentBookingFilter = 'all';
+let usersPage = 1;
+let providersPage = 1;
+let bookingsPage = 1;
+let pageSize = 20;
+
+function paginate(rows, page) {
+  const total = rows.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const current = Math.min(Math.max(1, page), totalPages);
+  const start = (current - 1) * pageSize;
+  return {
+    rows: rows.slice(start, start + pageSize),
+    page: current,
+    totalPages,
+    total,
+    start,
+  };
+}
+
+function renderPaginationFooter(footerId, totalCount, page, label, onPage) {
+  const el = document.getElementById(footerId);
+  if (!el) return;
+  const from = totalCount === 0 ? 0 : page.start + 1;
+  const to = Math.min(page.start + pageSize, totalCount);
+  const cbName = `__pg_${footerId}`;
+  window[cbName] = onPage;
+  const sizes = [10, 20, 50, 100];
+  const opts = sizes.map(s => `<option value="${s}" ${s===pageSize?'selected':''}>${s}/page</option>`).join('');
+  el.innerHTML = `
+    <span>Showing ${from}–${to} of ${totalCount} ${label}</span>
+    <div class="pager">
+      <select class="pager-size" onchange="pageSize=parseInt(this.value,10);usersPage=1;providersPage=1;bookingsPage=1;renderUsers();renderProviders();renderBookings();">${opts}</select>
+      <button class="pager-btn" ${page.page<=1?'disabled':''} onclick="window['${cbName}'](1)" title="First">«</button>
+      <button class="pager-btn" ${page.page<=1?'disabled':''} onclick="window['${cbName}'](${page.page-1})" title="Prev">‹</button>
+      <span class="pager-info">Page ${page.page} / ${page.totalPages}</span>
+      <button class="pager-btn" ${page.page>=page.totalPages?'disabled':''} onclick="window['${cbName}'](${page.page+1})" title="Next">›</button>
+      <button class="pager-btn" ${page.page>=page.totalPages?'disabled':''} onclick="window['${cbName}'](${page.totalPages})" title="Last">»</button>
+    </div>`;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Auth / Login
+// ═════════════════════════════════════════════════════════════════════════════
+function doLogin() {
+  const key = document.getElementById('adminKeyInput').value.trim();
+  if (!key) {
+    document.getElementById('loginError').textContent = 'Please enter the admin key.';
+    return;
+  }
+  AUTH_TOKEN = key;
+  // Test the key by hitting /admin/api/stats
+  apiFetch('/admin/api/stats')
+    .then(() => {
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('appShell').classList.add('active');
+      sessionStorage.setItem('tapkar_admin', key);
+      refreshAll();
+    })
+    .catch(() => {
+      document.getElementById('loginError').textContent = 'Invalid admin key. Access denied.';
+      AUTH_TOKEN = '';
+    });
+}
+
+// Auto-login from session
+(function autoLogin() {
+  const saved = sessionStorage.getItem('tapkar_admin');
+  if (saved) {
+    AUTH_TOKEN = saved;
+    document.getElementById('adminKeyInput').value = saved;
+    doLogin();
+  }
+  // Allow Enter key
+  document.getElementById('adminKeyInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') doLogin();
+  });
+})();
+
+// ═════════════════════════════════════════════════════════════════════════════
+// API Helper
+// ═════════════════════════════════════════════════════════════════════════════
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(API + path, {
+    ...opts,
+    // Bypass browser cache so we never trigger an If-None-Match that Express
+    // answers with 304 (which has no body and would fail res.json()).
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + AUTH_TOKEN,
+      'Cache-Control': 'no-cache',
+      ...(opts.headers || {}),
+    },
+  });
+  if (res.status === 401 || res.status === 403) {
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Navigation
+// ═════════════════════════════════════════════════════════════════════════════
+function switchSection(name, btn) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('sec-' + name).classList.add('active');
+  if (btn) btn.classList.add('active');
+}
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('collapsed');
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Data Fetching
+// ═════════════════════════════════════════════════════════════════════════════
+async function refreshAll() {
+  await Promise.all([
+    fetchStats(),
+    fetchUsers(),
+    fetchProviders(),
+    fetchBookings(),
+  ]);
+}
+
+async function fetchStats() {
+  try {
+    const data = await apiFetch('/admin/api/stats');
+    animateCounter('statUsers', data.total_users || 0);
+    animateCounter('statProviders', data.total_providers || 0);
+    animateCounter('statBookings', data.total_bookings || 0);
+    animateCounter('statActive', data.active_bookings || 0);
+  } catch { /* login failed or not yet */ }
+}
+
+function animateCounter(id, target) {
+  const el = document.getElementById(id);
+  const start = parseInt(el.textContent) || 0;
+  const diff = target - start;
+  const duration = 600;
+  const startTime = performance.now();
+  function tick(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    el.textContent = Math.round(start + diff * eased);
+    if (progress < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+async function fetchUsers() {
+  try {
+    const data = await apiFetch('/admin/api/users');
+    allUsers = data.users || [];
+    renderUsers();
+  } catch { }
+}
+
+async function fetchProviders() {
+  try {
+    const data = await apiFetch('/admin/api/providers');
+    allProviders = data.providers || [];
+    renderProviders();
+  } catch { }
+}
+
+async function fetchBookings() {
+  try {
+    const data = await apiFetch('/admin/api/bookings');
+    allBookings = data.bookings || [];
+    renderBookings();
+    renderRecentBookings();
+  } catch { }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Rendering — Users
+// ═════════════════════════════════════════════════════════════════════════════
+function getFilteredUsers() {
+  const q = (document.getElementById('userSearch')?.value || '').toLowerCase();
+  return allUsers.filter(u => {
+    const matchSearch = !q ||
+      (u.id || '').toLowerCase().includes(q) ||
+      (u.name || '').toLowerCase().includes(q) ||
+      (u.phone || '').toLowerCase().includes(q);
+    const matchStatus = currentUserFilter === 'all' ||
+      (currentUserFilter === 'blocked' && u.blocked) ||
+      (currentUserFilter === 'active' && !u.blocked);
+    return matchSearch && matchStatus;
+  });
+}
+
+function renderUsers() {
+  const filtered = getFilteredUsers();
+  const tbody = document.getElementById('usersTableBody');
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="icon">👤</div><h3>No users found</h3><p>Try adjusting your search or filters.</p></div></td></tr>`;
+    document.getElementById('usersTableFooter').innerHTML = '';
+    return;
+  }
+  const page = paginate(filtered, usersPage);
+  tbody.innerHTML = page.rows.map(u => `
+    <tr>
+      <td>
+        <div class="user-cell">
+          <div class="avatar">${(u.name || u.id || '?')[0].toUpperCase()}</div>
+          <div>
+            <div class="name">${esc(u.name || 'Unnamed')}</div>
+            <div class="sub">${esc(u.id)}</div>
+          </div>
+        </div>
+      </td>
+      <td>${esc(u.phone || '—')}</td>
+      <td>${u.booking_count || 0}</td>
+      <td>${u.blocked ? '<span class="badge red">Blocked</span>' : '<span class="badge green">Active</span>'}</td>
+      <td>
+        <div class="actions">
+          <button class="act-btn" title="Edit" onclick='editUser(${JSON.stringify(u).replace(/'/g, "&#39;")})'>✏️</button>
+          <button class="act-btn ${u.blocked ? 'success' : ''}" title="${u.blocked ? 'Unblock' : 'Block'}" onclick="toggleBlockUser('${esc(u.id)}', ${!u.blocked})">${u.blocked ? '✅' : '🚫'}</button>
+          <button class="act-btn danger" title="Delete" onclick="confirmDeleteUser('${esc(u.id)}')">🗑️</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+  renderPaginationFooter('usersTableFooter', filtered.length, page, 'users', (p) => { usersPage = p; renderUsers(); });
+}
+
+function filterUsers() { usersPage = 1; renderUsers(); }
+function filterUserStatus(status, btn) {
+  currentUserFilter = status;
+  usersPage = 1;
+  btn.parentElement.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderUsers();
+}
+
+function editUser(user) {
+  openModal(`
+    <div class="modal-header"><h3>Edit User</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>User ID</label><input value="${esc(user.id)}" disabled /></div>
+      <div class="form-group"><label>Name</label><input id="editUserName" value="${esc(user.name || '')}" placeholder="User name" /></div>
+      <div class="form-group"><label>Phone</label><input id="editUserPhone" value="${esc(user.phone || '')}" placeholder="Phone number" /></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveUser('${esc(user.id)}')">Save Changes</button>
+    </div>
+  `);
+}
+
+async function saveUser(id) {
+  try {
+    await apiFetch('/admin/api/users/' + encodeURIComponent(id), {
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: document.getElementById('editUserName').value,
+        phone: document.getElementById('editUserPhone').value,
+      }),
+    });
+    closeModal();
+    toast('User updated successfully', 'success');
+    fetchUsers();
+    fetchStats();
+  } catch (e) { toast('Failed to update user: ' + e.message, 'error'); }
+}
+
+async function toggleBlockUser(id, block) {
+  try {
+    await apiFetch('/admin/api/users/' + encodeURIComponent(id) + '/block', {
+      method: 'POST',
+      body: JSON.stringify({ blocked: block }),
+    });
+    toast(block ? 'User blocked' : 'User unblocked', 'success');
+    fetchUsers();
+  } catch (e) { toast('Failed: ' + e.message, 'error'); }
+}
+
+function confirmDeleteUser(id) {
+  openModal(`
+    <div class="modal-header"><h3>Confirm Delete</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="confirm-body">
+        <div class="icon">⚠️</div>
+        <h3>Delete this user?</h3>
+        <p>User <strong>${esc(id)}</strong> will be permanently removed. This action cannot be undone.</p>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="deleteUser('${esc(id)}')">Delete User</button>
+    </div>
+  `);
+}
+
+async function deleteUser(id) {
+  try {
+    await apiFetch('/admin/api/users/' + encodeURIComponent(id), { method: 'DELETE' });
+    closeModal();
+    toast('User deleted', 'success');
+    fetchUsers();
+    fetchStats();
+  } catch (e) { toast('Failed: ' + e.message, 'error'); }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Rendering — Providers
+// ═════════════════════════════════════════════════════════════════════════════
+const categoryEmoji = {
+  plumber:'🔧', electrician:'⚡', ac_technician:'❄️', carpenter:'🪚', painter:'🎨',
+  locksmith:'🔑', welder:'🔩', mason:'🧱', pest_control:'🐛', cctv_installer:'📷',
+  internet_tech:'🌐', mobile_repair:'📱', laptop_repair:'💻', auto_mechanic:'🚗',
+  mehndi_artist:'💅', photographer:'📸', event_planner:'🎉', beautician:'💇',
+  tutor:'📚', quran_teacher:'📖', cook:'👨‍🍳', cleaner:'🧹', driver:'🚙',
+  personal_trainer:'💪', yoga_instructor:'🧘', gardener:'🌱', babysitter:'👶',
+  eldercare:'🧓', laundry:'👕', tailor:'✂️', packer_mover:'📦', massage_therapist:'💆',
+};
+
+function getFilteredProviders() {
+  const q = (document.getElementById('providerSearch')?.value || '').toLowerCase();
+  return allProviders.filter(p => {
+    const matchSearch = !q ||
+      (p.id || '').toLowerCase().includes(q) ||
+      (p.name || '').toLowerCase().includes(q) ||
+      (p.category || '').toLowerCase().includes(q) ||
+      (p.neighborhood || '').toLowerCase().includes(q);
+    const matchStatus = currentProviderFilter === 'all' ||
+      (currentProviderFilter === 'verified' && p.verified) ||
+      (currentProviderFilter === 'unverified' && !p.verified && !p.blocked) ||
+      (currentProviderFilter === 'blocked' && p.blocked);
+    return matchSearch && matchStatus;
+  });
+}
+
+function renderProviders() {
+  const filtered = getFilteredProviders();
+  const tbody = document.getElementById('providersTableBody');
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="icon">🔧</div><h3>No providers found</h3><p>Try adjusting your search or filters.</p></div></td></tr>`;
+    document.getElementById('providersTableFooter').innerHTML = '';
+    return;
+  }
+  const page = paginate(filtered, providersPage);
+  tbody.innerHTML = page.rows.map(p => `
+    <tr>
+      <td>
+        <div class="user-cell">
+          <div class="avatar">${categoryEmoji[p.category] || '🔧'}</div>
+          <div>
+            <div class="name">${esc(p.name)}</div>
+            <div class="sub">${esc(p.id)}</div>
+          </div>
+        </div>
+      </td>
+      <td><span class="badge blue">${esc(p.category || '—')}</span></td>
+      <td>${esc(p.neighborhood || '—')}</td>
+      <td>⭐ ${(p.rating || 0).toFixed(1)} <span style="color:var(--text-muted)">(${p.review_count || 0})</span></td>
+      <td>${p.verified ? '<span class="badge green">✓ Verified</span>' : '<span class="badge gray">Unverified</span>'}</td>
+      <td>${p.blocked ? '<span class="badge red">Blocked</span>' : '<span class="badge green">Active</span>'}</td>
+      <td>
+        <div class="actions">
+          <button class="act-btn" title="View Details" onclick='viewProvider(${JSON.stringify(p).replace(/'/g, "&#39;")})'>👁️</button>
+          <button class="act-btn" title="Edit" onclick='editProvider(${JSON.stringify(p).replace(/'/g, "&#39;")})'>✏️</button>
+          <button class="act-btn success" title="${p.verified ? 'Revoke Verification' : 'Verify'}" onclick="toggleVerify('${esc(p.id)}', ${!p.verified})">${p.verified ? '🛡️' : '☑️'}</button>
+          <button class="act-btn ${p.blocked ? 'success' : ''}" title="${p.blocked ? 'Unblock' : 'Block'}" onclick="toggleBlockProvider('${esc(p.id)}', ${!p.blocked})">${p.blocked ? '✅' : '🚫'}</button>
+          <button class="act-btn danger" title="Delete" onclick="confirmDeleteProvider('${esc(p.id)}')">🗑️</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+  renderPaginationFooter('providersTableFooter', filtered.length, page, 'providers', (p) => { providersPage = p; renderProviders(); });
+}
+
+function filterProviders() { providersPage = 1; renderProviders(); }
+function filterProviderStatus(status, btn) {
+  currentProviderFilter = status;
+  providersPage = 1;
+  btn.parentElement.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderProviders();
+}
+
+function viewProvider(p) {
+  const langs = (p.languages || []).join(', ');
+  const price = p.price_range_pkr ? `PKR ${p.price_range_pkr[0]} – ${p.price_range_pkr[1]}` : '—';
+  openModal(`
+    <div class="modal-header"><h3>Provider Details</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div style="text-align:center;margin-bottom:20px">
+        <div style="font-size:48px;margin-bottom:8px">${categoryEmoji[p.category] || '🔧'}</div>
+        <h2 style="font-size:20px;font-weight:700">${esc(p.name)}</h2>
+        <div style="color:var(--text-muted);font-size:13px;margin-top:4px">${esc(p.id)}</div>
+      </div>
+      <div class="detail-grid">
+        <div class="detail-item"><label>Category</label><div class="value">${esc(p.category)}</div></div>
+        <div class="detail-item"><label>Gender</label><div class="value">${esc(p.gender || '—')}</div></div>
+        <div class="detail-item"><label>Neighborhood</label><div class="value">${esc(p.neighborhood)}</div></div>
+        <div class="detail-item"><label>Phone</label><div class="value">${esc(p.phone || '—')}</div></div>
+        <div class="detail-item"><label>Rating</label><div class="value">⭐ ${(p.rating||0).toFixed(1)} (${p.review_count||0} reviews)</div></div>
+        <div class="detail-item"><label>Jobs Done</label><div class="value">${p.jobs_completed || 0}</div></div>
+        <div class="detail-item"><label>Price Range</label><div class="value">${price}</div></div>
+        <div class="detail-item"><label>Languages</label><div class="value">${esc(langs || '—')}</div></div>
+        <div class="detail-item"><label>Verified</label><div class="value">${p.verified ? '✅ Yes' : '❌ No'}</div></div>
+        <div class="detail-item"><label>Status</label><div class="value">${p.blocked ? '🚫 Blocked' : '✅ Active'}</div></div>
+        ${p.bio ? `<div class="detail-item full-width"><label>Bio</label><div class="value">${esc(p.bio)}</div></div>` : ''}
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+    </div>
+  `);
+}
+
+function editProvider(p) {
+  openModal(`
+    <div class="modal-header"><h3>Edit Provider</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Provider ID</label><input value="${esc(p.id)}" disabled /></div>
+      <div class="form-group"><label>Name</label><input id="editProvName" value="${esc(p.name || '')}" /></div>
+      <div class="form-group"><label>Category</label>
+        <select id="editProvCategory">
+          ${Object.keys(categoryEmoji).map(c => `<option value="${c}" ${c===p.category?'selected':''}>${categoryEmoji[c]} ${c.replace(/_/g,' ')}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label>Neighborhood</label><input id="editProvNeighborhood" value="${esc(p.neighborhood || '')}" /></div>
+      <div class="form-group"><label>Phone</label><input id="editProvPhone" value="${esc(p.phone || '')}" /></div>
+      <div class="form-group"><label>Bio</label><textarea id="editProvBio" rows="3">${esc(p.bio || '')}</textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveProvider('${esc(p.id)}')">Save Changes</button>
+    </div>
+  `);
+}
+
+async function saveProvider(id) {
+  try {
+    await apiFetch('/admin/api/providers/' + encodeURIComponent(id), {
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: document.getElementById('editProvName').value,
+        category: document.getElementById('editProvCategory').value,
+        neighborhood: document.getElementById('editProvNeighborhood').value,
+        phone: document.getElementById('editProvPhone').value,
+        bio: document.getElementById('editProvBio').value,
+      }),
+    });
+    closeModal();
+    toast('Provider updated', 'success');
+    fetchProviders();
+  } catch (e) { toast('Failed: ' + e.message, 'error'); }
+}
+
+async function toggleVerify(id, verified) {
+  try {
+    await apiFetch('/admin/api/providers/' + encodeURIComponent(id) + '/verify', {
+      method: 'POST',
+      body: JSON.stringify({ verified }),
+    });
+    toast(verified ? 'Provider verified ✓' : 'Verification revoked', 'success');
+    fetchProviders();
+  } catch (e) { toast('Failed: ' + e.message, 'error'); }
+}
+
+async function toggleBlockProvider(id, block) {
+  try {
+    await apiFetch('/admin/api/providers/' + encodeURIComponent(id) + '/block', {
+      method: 'POST',
+      body: JSON.stringify({ blocked: block }),
+    });
+    toast(block ? 'Provider blocked' : 'Provider unblocked', 'success');
+    fetchProviders();
+  } catch (e) { toast('Failed: ' + e.message, 'error'); }
+}
+
+function confirmDeleteProvider(id) {
+  openModal(`
+    <div class="modal-header"><h3>Confirm Delete</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="confirm-body">
+        <div class="icon">⚠️</div>
+        <h3>Delete this provider?</h3>
+        <p>Provider <strong>${esc(id)}</strong> will be permanently removed. This action cannot be undone.</p>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="deleteProvider('${esc(id)}')">Delete Provider</button>
+    </div>
+  `);
+}
+
+async function deleteProvider(id) {
+  try {
+    await apiFetch('/admin/api/providers/' + encodeURIComponent(id), { method: 'DELETE' });
+    closeModal();
+    toast('Provider deleted', 'success');
+    fetchProviders();
+    fetchStats();
+  } catch (e) { toast('Failed: ' + e.message, 'error'); }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Rendering — Bookings
+// ═════════════════════════════════════════════════════════════════════════════
+const statusColors = {
+  requested: 'amber', matched: 'blue', confirmed: 'blue',
+  reminded: 'blue', in_progress: 'amber', completed: 'green',
+  cancelled: 'red', no_show: 'red',
+};
+
+function getFilteredBookings() {
+  const q = (document.getElementById('bookingSearch')?.value || '').toLowerCase();
+  return allBookings.filter(b => {
+    const matchSearch = !q ||
+      (b.id || '').toLowerCase().includes(q) ||
+      (b.user_id || '').toLowerCase().includes(q) ||
+      (b.user_name || '').toLowerCase().includes(q) ||
+      (b.user_phone || '').toLowerCase().includes(q) ||
+      (b.provider_id || '').toLowerCase().includes(q) ||
+      (b.provider_name || '').toLowerCase().includes(q) ||
+      (b.service_category_id || '').toLowerCase().includes(q);
+    const matchStatus = currentBookingFilter === 'all' || b.status === currentBookingFilter;
+    return matchSearch && matchStatus;
+  });
+}
+
+function renderBookings() {
+  const filtered = getFilteredBookings();
+  const tbody = document.getElementById('bookingsTableBody');
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="icon">📋</div><h3>No bookings found</h3><p>Try adjusting your search or filters.</p></div></td></tr>`;
+    document.getElementById('bookingsTableFooter').innerHTML = '';
+    return;
+  }
+  const page = paginate(filtered, bookingsPage);
+  tbody.innerHTML = page.rows.map(b => `
+    <tr>
+      <td><span style="font-family:monospace;font-size:12px;color:var(--text-muted)">${esc((b.id||'').slice(0,16))}</span></td>
+      <td>
+        <div class="cell-name">${esc(b.user_name || 'Unnamed')}</div>
+        <div class="cell-sub">${esc(b.user_phone || b.user_id || '—')}</div>
+      </td>
+      <td>${esc(b.provider_name || b.provider_id || '—')}</td>
+      <td><span class="badge blue">${esc(b.service_category_id || '—')}</span></td>
+      <td>${b.time_iso ? formatDate(b.time_iso) : '—'}</td>
+      <td><span class="badge ${statusColors[b.status]||'gray'}">${esc(b.status)}</span></td>
+      <td>
+        <div class="actions">
+          <button class="act-btn" title="Update Status" onclick='editBookingStatus(${JSON.stringify(b).replace(/'/g,"&#39;")})'>✏️</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+  renderPaginationFooter('bookingsTableFooter', filtered.length, page, 'bookings', (p) => { bookingsPage = p; renderBookings(); });
+}
+
+function renderRecentBookings() {
+  const recent = allBookings.slice(0, 5);
+  const tbody = document.getElementById('recentBookingsBody');
+  if (recent.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="icon">📋</div><h3>No bookings yet</h3></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = recent.map(b => `
+    <tr>
+      <td><span style="font-family:monospace;font-size:12px;color:var(--text-muted)">${esc((b.id||'').slice(0,12))}…</span></td>
+      <td>${esc(b.user_name || b.user_id || '—')}</td>
+      <td>${esc(b.provider_name || b.provider_id || '—')}</td>
+      <td><span class="badge blue">${esc(b.service_category_id || '—')}</span></td>
+      <td><span class="badge ${statusColors[b.status]||'gray'}">${esc(b.status)}</span></td>
+      <td>${b.created_at ? formatDate(b.created_at) : '—'}</td>
+    </tr>
+  `).join('');
+}
+
+function filterBookings() { bookingsPage = 1; renderBookings(); }
+function filterBookingStatus(status, btn) {
+  currentBookingFilter = status;
+  bookingsPage = 1;
+  btn.parentElement.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderBookings();
+}
+
+function editBookingStatus(b) {
+  const statuses = ['requested','matched','confirmed','reminded','in_progress','completed','cancelled','no_show'];
+  openModal(`
+    <div class="modal-header"><h3>Update Booking Status</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Booking ID</label><input value="${esc(b.id)}" disabled /></div>
+      <div class="form-group"><label>Current Status</label><span class="badge ${statusColors[b.status]||'gray'}">${esc(b.status)}</span></div>
+      <div class="form-group" style="margin-top:16px"><label>New Status</label>
+        <select id="editBookingNewStatus">
+          ${statuses.map(s => `<option value="${s}" ${s===b.status?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveBookingStatus('${esc(b.id)}')">Update Status</button>
+    </div>
+  `);
+}
+
+async function saveBookingStatus(id) {
+  try {
+    await apiFetch('/admin/api/bookings/' + encodeURIComponent(id), {
+      method: 'PATCH',
+      body: JSON.stringify({ status: document.getElementById('editBookingNewStatus').value }),
+    });
+    closeModal();
+    toast('Booking status updated', 'success');
+    fetchBookings();
+    fetchStats();
+  } catch (e) { toast('Failed: ' + e.message, 'error'); }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Modal
+// ═════════════════════════════════════════════════════════════════════════════
+function openModal(html) {
+  document.getElementById('modalContent').innerHTML = html;
+  document.getElementById('modalOverlay').classList.add('active');
+}
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('active');
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Toast Notifications
+// ═════════════════════════════════════════════════════════════════════════════
+function toast(message, type = 'info') {
+  const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+  const container = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.innerHTML = `<span>${icons[type] || ''}</span><span>${esc(message)}</span>`;
+  container.appendChild(el);
+  setTimeout(() => {
+    el.classList.add('toast-out');
+    setTimeout(() => el.remove(), 300);
+  }, 3500);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Utilities
+// ═════════════════════════════════════════════════════════════════════════════
+function esc(s) {
+  if (s == null) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+function formatDate(iso) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch { return iso; }
+}
+</script>
+</body>
+</html>

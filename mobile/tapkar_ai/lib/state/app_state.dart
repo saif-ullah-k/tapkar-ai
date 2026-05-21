@@ -270,6 +270,10 @@ class AppState extends ChangeNotifier {
         selectedTimeIso: selectedTimeIso,
         priorIntent: priorIntent,
         userGender: auth.gender,
+        // Name + phone flow through to the backend so the admin
+        // dashboard shows real names instead of Firebase UIDs.
+        userName: auth.displayName,
+        userPhone: auth.phone,
       )) {
         _handleEvent(evt);
         notifyListeners();

@@ -62,13 +62,13 @@ There are two ways to talk to TapKar AI:
                                 Firestore + Maps + Cloud STT
 ```
 
-Full architecture details in [`docs/architecture.md`](docs/architecture.md). Live animated explainer in [`flow-explainer.html`](flow-explainer.html) — open in a browser.
+There's also a web **Admin Dashboard** served from the same backend at `/admin/dashboard` — operational view of users, providers, and bookings.
 
 ## Anti-monolithic by design
 
 > No `rankProviders()`. No `matchCategory()`. No `if (category === 'plumber')`. Every business decision is an LLM call. Tools are dumb I/O. Adding a service category = adding a row to `data/taxonomy.json`.
 
-This is enforced as a project principle, not just a coding style. See [`docs/architecture.md#anti-monolithic-guarantee`](docs/architecture.md).
+This is enforced as a project principle, not just a coding style.
 
 ## Languages supported
 
@@ -81,7 +81,7 @@ This is enforced as a project principle, not just a coding style. See [`docs/arc
 
 ## Service coverage
 
-26 service categories across 3 tiers — see [`data/taxonomy.json`](data/taxonomy.json) for the full list. Open-domain fallback via Google Places API for anything not in the taxonomy.
+32 service categories across 3 tiers — see [`data/taxonomy.json`](data/taxonomy.json) for the full list. Open-domain fallback via Google Places API for anything not in the taxonomy.
 
 ## Tech stack
 
@@ -90,7 +90,7 @@ This is enforced as a project principle, not just a coding style. See [`docs/arc
 | Mobile | **Flutter** | Google's framework · single codebase Android/iOS · strong Urdu rendering |
 | Backend | **Cloud Run + TypeScript** | Authored entirely in Antigravity · easy Firestore + Maps integration |
 | Orchestration | **Google Antigravity** | Mandatory · multi-agent runtime · produces submission-required artifacts |
-| LLM | **Gemini 3.1 Pro** (default) + **Claude Sonnet 4.6** (heavy reasoning) | Both available natively inside Antigravity's model picker |
+| LLM | **Gemini 2.5 Flash / Flash-Lite** (default) + **Gemini Live** (voice) | Single Gemini API key for chat + voice; Live model orchestrates the 5-agent pipeline as a tool |
 | Data | **Firestore** + mock JSON | Free tier for hackathon · trace logs written here |
 | Maps | **Google Places API + Geocoding** | Real provider discovery with mock fallback |
 | Voice (chat) | **Cloud Speech-to-Text** (Urdu) | Native mobile STT better than browser API |
@@ -101,33 +101,23 @@ This is enforced as a project principle, not just a coding style. See [`docs/arc
 ```
 google_challange2/
 ├── README.md                   ← you are here
-├── SUBMISSION.md               ← deliverables checklist (all 6)
-├── flow-explainer.html         ← animated agent-flow demo (open in browser)
-├── docs/
-│   ├── architecture.md         ← system design, anti-monolith guarantee
-│   └── work-plan.md            ← 4-day execution plan
-├── antigravity-artifacts/      ← implementation plans, walkthroughs, task lists
-│   └── README.md
-├── recordings/raw/             ← screen-recording stockpile (gitignored)
+├── Dockerfile                  ← Cloud Run container build
+├── deploy.sh                   ← one-shot deploy script
 ├── data/
 │   ├── taxonomy.json           ← service categories + multilingual synonyms
 │   └── providers.karachi.json  ← seed mock providers
+├── branding/                   ← brand assets (logo)
 ├── backend/
 │   └── src/
+│       ├── admin.html          ← admin dashboard (served at /admin/dashboard)
 │       ├── agents/             ← prompt specs for orchestrator + 5 subagents
-│       └── tools/              ← thin TypeScript I/O wrappers (~10 LoC each)
-└── mobile/                     ← Flutter app (scaffolded Day 1)
+│       └── tools/              ← thin TypeScript I/O wrappers
+└── mobile/                     ← Flutter app
 ```
-
-## Quick start
-
-1. Open [`flow-explainer.html`](flow-explainer.html) in a browser → press Play. Two minutes, you understand the whole system.
-2. Read [`docs/architecture.md`](docs/architecture.md).
-3. Read [`SUBMISSION.md`](SUBMISSION.md) to see what's being submitted on May 20.
 
 ## Team
 
-5-person team · Karachi regional round · all members 18+.
+**Saifullah** + **Haris** · Karachi regional round.
 
 ## License
 

@@ -407,54 +407,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  static const _pipelineAgents = ['intent', 'discovery', 'ranking', 'booking', 'followup'];
-  /// In locked-mode (user already picked a provider from a prior turn), the
-  /// orchestrator skips discovery + ranking and only runs intent + booking.
-  /// We can't directly observe orchestrator state from the chat, but the
-  /// last user message echoing "Selected: …" is a reliable hint.
-  bool get _isLockedMode {
-    if (widget.state.messages.isEmpty) return false;
-    final last = widget.state.messages.last;
-    if (!last.fromUser) return false;
-    final t = last.text.toLowerCase();
-    return t.startsWith('selected:') ||
-        t.startsWith('select kiya:') ||
-        t.startsWith('منتخب کیا'); // urdu
-  }
-
-  String _currentAgentLabel() {
-    final done = widget.state.traceSteps.length;
-    if (_isLockedMode) {
-      // Locked pipeline: intent → booking only. Followup runs async on the
-      // server and won't appear until after run_complete.
-      const locked = ['intent', 'booking'];
-      if (done >= locked.length) return 'finishing up';
-      return locked[done];
-    }
-    if (done >= _pipelineAgents.length) return 'finishing up';
-    return _pipelineAgents[done];
-  }
-
-  Widget _runningIndicator() => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        child: Row(
-          children: [
-            const SizedBox(
-              width: 12, height: 12,
-              child: CircularProgressIndicator(strokeWidth: 1.5),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              () {
-                final total = _isLockedMode ? 2 : 5;
-                final done = widget.state.traceSteps.length.clamp(0, total);
-                return 'Agent ${_currentAgentLabel()} working… ($done/$total)';
-              }(),
-              style: AppFonts.base(size: 12, color: Colors.white60),
-            ),
-          ],
-        ),
-      );
+  Widget _runningIndicator() => const _TypingBubble();
 
   Widget _errorBanner(String msg, VoidCallback onDismiss) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -595,6 +548,79 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Messenger / iMessage-style three-dot typing bubble. Replaces the old
+/// "Agent intent working… (1/5)" trace text so end users see a familiar
+/// chat affordance instead of internal pipeline state.
+class _TypingBubble extends StatefulWidget {
+  const _TypingBubble();
+  @override
+  State<_TypingBubble> createState() => _TypingBubbleState();
+}
+
+class _TypingBubbleState extends State<_TypingBubble>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.violet.withOpacity(0.12),
+          border: Border.all(color: AppColors.violet.withOpacity(0.3)),
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(16),
+            topRight: Radius.circular(16),
+            bottomLeft: Radius.circular(4),
+            bottomRight: Radius.circular(16),
+          ),
+        ),
+        child: AnimatedBuilder(
+          animation: _ctrl,
+          builder: (_, __) => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: List.generate(3, (i) {
+              // Each dot peaks at a staggered point in the cycle.
+              final phase = (_ctrl.value - i * 0.18) % 1.0;
+              // Smooth bell: opacity rises 0.3 → 1.0 and back over a third of the cycle.
+              final t = (phase < 0.33) ? (phase / 0.33) : 1.0 - ((phase - 0.33) / 0.67).clamp(0.0, 1.0);
+              final opacity = 0.3 + 0.7 * t;
+              return Padding(
+                padding: EdgeInsets.only(right: i == 2 ? 0 : 6),
+                child: Container(
+                  width: 8, height: 8,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(opacity),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              );
+            }),
+          ),
+        ),
       ),
     );
   }

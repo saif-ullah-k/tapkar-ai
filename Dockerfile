@@ -15,6 +15,8 @@ RUN cd backend && npm ci --no-audit --no-fund
 COPY backend/src ./backend/src
 COPY backend/tsconfig.json ./backend/
 COPY data ./data
+# Brand assets — admin dashboard serves logo from /admin/assets/logo.png
+COPY branding ./branding
 
 WORKDIR /app/backend
 

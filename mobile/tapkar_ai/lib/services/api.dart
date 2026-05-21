@@ -18,6 +18,8 @@ class ApiClient {
     String? selectedTimeIso,
     Map<String, dynamic>? priorIntent,
     String? userGender,
+    String? userName,
+    String? userPhone,
   }) async* {
     final req = http.Request('POST', Uri.parse('$baseUrl/run'));
     req.headers['Content-Type'] = 'application/json';
@@ -34,6 +36,10 @@ class ApiClient {
       // User's gender — bot speaks with matching grammatical gender in
       // Urdu/Roman Urdu ("dhond rahi hoon" vs "dhond raha hoon").
       if (userGender != null) 'user_gender': userGender,
+      // Display name + phone — backend tracks these so the admin
+      // dashboard can show real names instead of bare Firebase UIDs.
+      if (userName != null && userName.isNotEmpty) 'user_name': userName,
+      if (userPhone != null && userPhone.isNotEmpty) 'user_phone': userPhone,
     });
 
     final response = await req.send();

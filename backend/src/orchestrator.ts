@@ -641,7 +641,43 @@ export async function* runPipeline(input: RunInput): AsyncGenerator<StreamEvent>
       // This avoids "AI confirmed me with a provider who hasn't actually agreed".
       if (agentName === 'ranking' && !isLocked) {
         const r = result.output as any;
-        const top: any[] = r?.top_3 ?? r?.recommendations ?? [];
+        let top: any[] = r?.top_3 ?? r?.recommendations ?? [];
+
+        // Deterministic override: the ranking LLM has a strong bias toward
+        // high-rating providers and will often drop newly-registered ones
+        // (0★ / 0 jobs) from top_3 even when the prompt says they MUST be
+        // included. So enforce it in code: every registered provider in the
+        // discovery candidate list within 5km gets prepended to top_3, and
+        // mock providers slide down to fill the remaining slots (capped at 3).
+        const discCandidates: any[] = ((state.discovery as any)?.candidates ?? []) as any[];
+        // 15km matches the search_providers radius — any registered provider
+        // that survived discovery + availability filter is fair game.
+        const registeredNearby = discCandidates.filter(
+          (c) => c.source === 'registered' && (c.distance_km ?? 999) <= 15
+        );
+        if (registeredNearby.length > 0) {
+          const existingIds = new Set(top.map((t: any) => t.provider_id));
+          const newcomers = registeredNearby
+            .filter((c) => !existingIds.has(c.id))
+            .map((c) => ({
+              rank: 0, // re-numbered below
+              provider_id: c.id,
+              score: null,
+              reasoning: `${c.name} is a local ${c.category} in ${c.neighborhood ?? 'your area'} — new on TapKar but right where you need them. Give a local pro their first job.`,
+              tradeoffs: 'New to the platform — no reviews yet, but verified and in your neighborhood.',
+            }));
+          if (newcomers.length > 0) {
+            top = [...newcomers, ...top].slice(0, 3).map((t, i) => ({ ...t, rank: i + 1 }));
+            console.log(
+              `[ranking-override] Promoted ${newcomers.length} registered provider(s) to top_3: ${newcomers.map((n) => n.provider_id).join(', ')}`
+            );
+            // Mutate the agent's output so downstream code (alternatives, trace) sees the rewritten top_3
+            r.top_3 = top;
+            // Force show_options mode so the user sees the registered provider
+            // explicitly listed rather than auto-booked to a mock fallback.
+            r.recommendation_mode = 'show_options';
+          }
+        }
         // Empty case — no providers at all
         if (Array.isArray(top) && top.length === 0) {
           const step: TraceStep = {
@@ -908,6 +944,16 @@ export async function* runPipeline(input: RunInput): AsyncGenerator<StreamEvent>
           const { getBookingFromStore } = await import('./store.js');
           const booking = (await getBookingFromStore(b.booking_id)) as any;
           if (booking) {
+            // Booking records are denormalized — they store only provider_id.
+            // Look up the provider so the confirmation message can show the
+            // real name/rating/neighborhood instead of "undefined".
+            const provider = loadProviders().find((p) => p.id === booking.provider_id);
+            const providerName =
+              provider?.name ?? booking.provider_name ?? 'the provider';
+            const providerRating = provider?.rating ?? booking.provider_rating;
+            const providerNeighborhood =
+              provider?.neighborhood ?? booking.provider_neighborhood;
+
             const userLang = (state.user_language as string | null) ?? 'en';
             // Format time nicely in PKT (booking time_iso is +05:00).
             const t = booking.time_iso ?? '';
@@ -920,14 +966,12 @@ export async function* runPipeline(input: RunInput): AsyncGenerator<StreamEvent>
                 ? `${priceLo}-${priceHi} PKR`
                 : '';
             const ratingStr =
-              typeof booking.provider_rating === 'number'
-                ? `${booking.provider_rating}★`
-                : '';
+              typeof providerRating === 'number' ? `${providerRating}★` : '';
             const msg = userLang === 'ur'
-              ? `بکنگ ہو گئی! ${booking.provider_name}${ratingStr ? ' (' + ratingStr + ')' : ''}${booking.provider_neighborhood ? '، ' + booking.provider_neighborhood : ''}۔ وقت: ${dateStr} ${timeStr}${priceStr ? '۔ تخمینہ: ' + priceStr : ''}۔ مزید کچھ چاہیے؟`
+              ? `بکنگ ہو گئی! ${providerName}${ratingStr ? ' (' + ratingStr + ')' : ''}${providerNeighborhood ? '، ' + providerNeighborhood : ''}۔ وقت: ${dateStr} ${timeStr}${priceStr ? '۔ تخمینہ: ' + priceStr : ''}۔ مزید کچھ چاہیے؟`
               : userLang === 'roman_ur'
-                ? `Booking ho gayi! ${booking.provider_name}${ratingStr ? ' (' + ratingStr + ')' : ''}${booking.provider_neighborhood ? ', ' + booking.provider_neighborhood : ''}. Time: ${dateStr} ${timeStr}${priceStr ? '. Estimate: ' + priceStr : ''}. Aur kuch chahiye?`
-                : `Booked! ${booking.provider_name}${ratingStr ? ' (' + ratingStr + ')' : ''}${booking.provider_neighborhood ? ', ' + booking.provider_neighborhood : ''}. Time: ${dateStr} ${timeStr}${priceStr ? '. Estimate: ' + priceStr : ''}. Anything else?`;
+                ? `Booking ho gayi! ${providerName}${ratingStr ? ' (' + ratingStr + ')' : ''}${providerNeighborhood ? ', ' + providerNeighborhood : ''}. Time: ${dateStr} ${timeStr}${priceStr ? '. Estimate: ' + priceStr : ''}. Aur kuch chahiye?`
+                : `Booked! ${providerName}${ratingStr ? ' (' + ratingStr + ')' : ''}${providerNeighborhood ? ', ' + providerNeighborhood : ''}. Time: ${dateStr} ${timeStr}${priceStr ? '. Estimate: ' + priceStr : ''}. Anything else?`;
             yield {
               event: 'user_message',
               data: {
@@ -935,9 +979,9 @@ export async function* runPipeline(input: RunInput): AsyncGenerator<StreamEvent>
                 language: userLang,
                 booking_summary: {
                   booking_id: booking.id,
-                  provider_name: booking.provider_name,
-                  provider_rating: booking.provider_rating,
-                  provider_neighborhood: booking.provider_neighborhood,
+                  provider_name: providerName,
+                  provider_rating: providerRating,
+                  provider_neighborhood: providerNeighborhood,
                   time_iso: booking.time_iso,
                   price_range_pkr: booking.estimated_price_pkr,
                 },

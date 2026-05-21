@@ -50,10 +50,16 @@ const mem = {
   bookings: new Map<string, Booking>(),
   jobs: new Map<string, ScheduledJob>(),
   inbox: new Map<string, any>(),
+  users: new Map<string, any>(), // Track seen users in memory
 };
 
 /** Live subscribers for SSE — keyed by run_id. */
 const traceSubscribers = new Map<string, Array<(step: TraceStep) => void>>();
+
+export function trackUserInMemory(userId: string, data: any = {}) {
+  const existing = mem.users.get(userId) || { id: userId, booking_count: 0, blocked: false };
+  mem.users.set(userId, { ...existing, ...data });
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Traces
@@ -357,5 +363,161 @@ export async function putInboxMessage(message: any): Promise<void> {
     if (fs) await fs.doc(`mock_inbox/${message.message_id}`).set(stripUndefined(message));
   } catch (e: any) {
     console.warn('[store] putInboxMessage Firestore write failed (ignored):', e?.message ?? e);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Return ALL bookings (admin view). Merges in-memory + Firestore. */
+export async function listAllBookingsAdmin(): Promise<Booking[]> {
+  const all = await _allBookings();
+  return Array.from(all.values())
+    .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+}
+
+/** Delete a booking from memory + Firestore. */
+export async function deleteBookingFromStore(id: string): Promise<boolean> {
+  const had = mem.bookings.delete(id);
+  try {
+    const fs = await getFirestore();
+    if (fs) await fs.doc(`bookings/${id}`).delete();
+  } catch (e: any) {
+    console.warn('[store] deleteBooking Firestore delete failed (ignored):', e?.message ?? e);
+  }
+  return had;
+}
+
+/** Aggregate a list of unique users from bookings + Firestore users collection.
+ *  Each user object includes { id, name, phone, booking_count, blocked }. */
+export async function listAllUsersAdmin(): Promise<any[]> {
+  const userMap = new Map<string, any>();
+
+  // 1) Gather from mem.users first
+  for (const [uid, u] of mem.users.entries()) {
+    userMap.set(uid, { ...u });
+  }
+
+  // 2) Gather users from bookings
+  const allB = await _allBookings();
+  for (const b of allB.values()) {
+    if (!b.user_id) continue;
+    const existing = userMap.get(b.user_id);
+    if (existing) {
+      existing.booking_count++;
+    } else {
+      userMap.set(b.user_id, {
+        id: b.user_id,
+        name: null,
+        phone: null,
+        booking_count: 1,
+        blocked: false,
+      });
+    }
+  }
+
+  // 3) Enrich / add from Firestore users collection
+  try {
+    const fs = await getFirestore();
+    if (fs) {
+      const snap = await fs.collection('users').get();
+      snap.forEach((doc: any) => {
+        const d = doc.data();
+        const uid = d.id || doc.id;
+        const existing = userMap.get(uid);
+        if (existing) {
+          existing.name = d.name ?? existing.name;
+          existing.phone = d.phone ?? existing.phone;
+          existing.blocked = d.blocked ?? existing.blocked;
+        } else {
+          userMap.set(uid, {
+            id: uid,
+            name: d.name ?? null,
+            phone: d.phone ?? null,
+            booking_count: 0,
+            blocked: d.blocked ?? false,
+          });
+        }
+      });
+
+      // Also gather user IDs from user_providers mapping
+      const upSnap = await fs.collection('user_providers').get();
+      upSnap.forEach((doc: any) => {
+        const uid = doc.id;
+        if (!userMap.has(uid)) {
+          userMap.set(uid, {
+            id: uid,
+            name: null,
+            phone: null,
+            booking_count: 0,
+            blocked: false,
+          });
+        }
+      });
+    }
+  } catch (e: any) {
+    console.warn('[store] listAllUsersAdmin Firestore read failed (ignored):', e?.message ?? e);
+  }
+
+  return Array.from(userMap.values());
+}
+
+/** Update a user document in Firestore (admin edit). */
+export async function updateUserAdmin(id: string, fields: Record<string, any>): Promise<void> {
+  const existing = mem.users.get(id) || { id, booking_count: 0, blocked: false };
+  mem.users.set(id, { ...existing, ...fields });
+  try {
+    const fs = await getFirestore();
+    if (fs) await fs.doc(`users/${id}`).set(stripUndefined(fields), { merge: true });
+  } catch (e: any) {
+    console.warn('[store] updateUserAdmin Firestore write failed (ignored):', e?.message ?? e);
+  }
+}
+
+/** Delete a user from Firestore. */
+export async function deleteUserAdmin(id: string): Promise<void> {
+  // Cascade: listAllUsersAdmin also reconstructs users from their bookings
+  // and user_providers entries. If we only delete users/{id}, the user
+  // re-appears on the next admin fetch. So wipe every trace:
+  //   1. mem.users + users/{id} doc
+  //   2. user_providers/{id} (provider-mapping entry created at signup)
+  //   3. every booking with user_id == id (mem + Firestore)
+  //   4. any in-memory inbox messages targeting this user
+  mem.users.delete(id);
+
+  // 3) Bookings owned by this user
+  const bookingIdsToDelete: string[] = [];
+  for (const [bid, b] of mem.bookings.entries()) {
+    if (b.user_id === id) bookingIdsToDelete.push(bid);
+  }
+  for (const bid of bookingIdsToDelete) mem.bookings.delete(bid);
+
+  // 4) Mock-inbox messages for this user
+  for (const [mid, m] of mem.inbox.entries()) {
+    if ((m as any).user_id === id) mem.inbox.delete(mid);
+  }
+
+  try {
+    const fs = await getFirestore();
+    if (fs) {
+      // 1) users/{id}
+      await fs.doc(`users/${id}`).delete();
+      // 2) user_providers/{id}
+      await fs.doc(`user_providers/${id}`).delete().catch(() => {});
+      // 3) bookings/{*} where user_id == id — query, then batch delete
+      const bookingsQuery = await fs
+        .collection('bookings')
+        .where('user_id', '==', id)
+        .get();
+      const batch = fs.batch();
+      bookingsQuery.forEach((doc: any) => batch.delete(doc.ref));
+      if (!bookingsQuery.empty) await batch.commit();
+      console.log(
+        `[store] deleteUserAdmin(${id}): removed user + ${bookingIdsToDelete.length} mem-bookings + ${bookingsQuery.size} fs-bookings`
+      );
+    }
+  } catch (e: any) {
+    console.warn('[store] deleteUserAdmin Firestore cascade failed (ignored):', e?.message ?? e);
   }
 }

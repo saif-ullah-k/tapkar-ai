@@ -39,6 +39,10 @@ recordings/
 *.jpeg
 *.gif
 
+# Re-include brand assets — admin dashboard serves these from /admin/assets/
+!branding/
+!branding/*.png
+
 # Tests
 **/test/
 **/*.test.ts
